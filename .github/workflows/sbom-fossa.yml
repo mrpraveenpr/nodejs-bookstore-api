@@ -19,9 +19,9 @@ jobs:
         uses: actions/checkout@v4
 
       # -----------------------------------------------------------
-      # 2️⃣ Setup Node environment
+      # 2️⃣ Setup Node environment (Node 20 LTS)
       # -----------------------------------------------------------
-      - name: ⚙️ Setup Node.js (v18)
+      - name: ⚙️ Setup Node.js (v20)
         uses: actions/setup-node@v4
         with:
           node-version: 20
@@ -37,47 +37,45 @@ jobs:
           echo "✅ Installation complete"
 
       # -----------------------------------------------------------
-      # 4️⃣ Install CycloneDX cdxgen tool
+      # 4️⃣ Install CycloneDX Generator (cdxgen)
       # -----------------------------------------------------------
-      - name: 🧰 Install CycloneDX Generator (cdxgen)
+      - name: 🧰 Install CycloneDX Generator
         run: |
-          echo "Installing cdxgen globally..."
+          echo "Installing @cyclonedx/cdxgen globally..."
           npm install -g @cyclonedx/cdxgen
           echo "✅ cdxgen installed successfully"
 
       # -----------------------------------------------------------
-      # 5️⃣ Generate Application SBOM (CycloneDX)
+      # 5️⃣ Generate Application SBOM
       # -----------------------------------------------------------
-      - name: 🧾 Generate Application SBOM
+      - name: 🧾 Generate Application SBOM (Node.js)
         run: |
-          echo "🔍 Generating application SBOM..."
+          echo "🔍 Generating Application SBOM using cdxgen..."
           cdxgen -t nodejs -o app-sbom.cdx.json
-          echo "✅ Application SBOM created: $(pwd)/app-sbom.cdx.json"
-          head -n 10 app-sbom.cdx.json
+          echo "✅ Application SBOM created → $(pwd)/app-sbom.cdx.json"
 
       # -----------------------------------------------------------
-      # 6️⃣ Build the container image
+      # 6️⃣ Build container image
       # -----------------------------------------------------------
       - name: 🏗️ Build container image
         run: |
-          echo "🏗️ Building container image for bookstore:latest ..."
+          echo "🏗️ Building container image (bookstore:latest)..."
           docker build -t bookstore:latest .
           echo "✅ Container image built successfully"
 
       # -----------------------------------------------------------
-      # 7️⃣ Generate Container SBOM (CycloneDX)
+      # 7️⃣ Generate Container SBOM
       # -----------------------------------------------------------
-      - name: 🧱 Generate Container SBOM
+      - name: 🧱 Generate Container SBOM (Docker image)
         run: |
-          echo "🔍 Generating container SBOM..."
-          cdxgen -t docker -o container-sbom.cdx.json -p bookstore:latest
-          echo "✅ Container SBOM created: $(pwd)/container-sbom.cdx.json"
-          head -n 10 container-sbom.cdx.json
+          echo "🔍 Generating Container SBOM using cdxgen..."
+          cdxgen -t docker -p bookstore:latest -o container-sbom.cdx.json
+          echo "✅ Container SBOM created → $(pwd)/container-sbom.cdx.json"
 
       # -----------------------------------------------------------
       # 8️⃣ Upload SBOMs as artifacts
       # -----------------------------------------------------------
-      - name: 📤 Upload SBOM artifacts
+      - name: 📤 Upload SBOM artifacts to GitHub
         uses: actions/upload-artifact@v4
         with:
           name: cyclone-dx-sboms
@@ -92,7 +90,7 @@ jobs:
         env:
           FOSSA_API_KEY: ${{ secrets.FOSSA_API_KEY }}
         run: |
-          echo "☁️ Uploading Application SBOM to FOSSA API..."
+          echo "☁️ Uploading Application SBOM to FOSSA..."
           curl -s -o response_app.json -w "%{http_code}" \
             -X POST "https://app.fossa.com/api/projects/custom/upload" \
             -H "Authorization: token ${FOSSA_API_KEY}" \
@@ -100,7 +98,7 @@ jobs:
             -F "format=cyclonedx" \
             -F "file=@app-sbom.cdx.json"
 
-          echo "☁️ Uploading Container SBOM to FOSSA API..."
+          echo "☁️ Uploading Container SBOM to FOSSA..."
           curl -s -o response_container.json -w "%{http_code}" \
             -X POST "https://app.fossa.com/api/projects/custom/upload" \
             -H "Authorization: token ${FOSSA_API_KEY}" \
@@ -108,16 +106,16 @@ jobs:
             -F "format=cyclonedx" \
             -F "file=@container-sbom.cdx.json"
 
-          echo "✅ Both SBOMs uploaded to FOSSA successfully!"
+          echo "✅ SBOMs successfully uploaded to FOSSA dashboard."
 
       # -----------------------------------------------------------
-      # 🔟 Display summary (optional)
+      # 🔟 Display SBOM summaries (optional)
       # -----------------------------------------------------------
-      - name: 📊 Display SBOM Summary
+      - name: 📊 Display SBOM summaries
         run: |
-          echo "Application SBOM snippet:"
-          head -n 10 app-sbom.cdx.json
+          echo "===== Application SBOM Preview ====="
+          head -n 15 app-sbom.cdx.json
           echo ""
-          echo "Container SBOM snippet:"
-          head -n 10 container-sbom.cdx.json
-          echo "✅ SBOM generation and uploads complete!"
+          echo "===== Container SBOM Preview ====="
+          head -n 15 container-sbom.cdx.json
+          echo "✅ Workflow complete!"
