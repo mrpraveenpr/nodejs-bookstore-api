@@ -101,9 +101,13 @@ jobs:
       - name: 🧱 Generate Container SBOM (Trivy -> CycloneDX)
         run: |
           set -euo pipefail
+          echo "🔍 Checking built images..."
+          docker images || true
+          echo ""
           echo "🔍 Generating Container SBOM (CycloneDX format with vulnerabilities)..."
-          trivy sbom --format cyclonedx --scanners vuln --input ./bookstore.tar --output container-sbom.cdx.json
+          trivy image --format cyclonedx --scanners vuln --output container-sbom.cdx.json bookstore:latest
           echo "✅ Container SBOM created → $(pwd)/container-sbom.cdx.json"
+
 
       # -----------------------------------------------------------
       # 9️⃣ Upload SBOMs as artifacts
