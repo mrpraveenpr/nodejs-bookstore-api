@@ -1,4 +1,4 @@
-name: FOSSA + SBOM Workflow (feature/fossa-sbom)
+name: FOSSA + CycloneDX SBOM Workflow (feature/fossa-sbom)
 
 on:
   push:
@@ -7,11 +7,14 @@ on:
     branches: [ feature/fossa-sbom ]
 
 jobs:
-  fossa-sbom-pipeline:
-    name: Generate SBOM & FOSSA Analysis
+  fossa-cdxgen-pipeline:
+    name: Generate Application & Container SBOM with CycloneDX
     runs-on: ubuntu-latest
 
     steps:
+      # -----------------------------------------------------------
+      # 1️⃣ Checkout repository
+      # -----------------------------------------------------------
       - name: 🧩 Checkout source code
         uses: actions/checkout@v4
 
@@ -34,52 +37,87 @@ jobs:
           echo "✅ Installation complete"
 
       # -----------------------------------------------------------
-      # 4️⃣ Generate CycloneDX SBOM using Syft
+      # 4️⃣ Install CycloneDX cdxgen tool
       # -----------------------------------------------------------
-      - name: 🧾 Generate SBOM with Anchore Syft
+      - name: 🧰 Install CycloneDX Generator (cdxgen)
         run: |
-          echo "🔍 Generating SBOM..."
-          docker run --rm -v "${{ github.workspace }}":/project anchore/syft:latest dir:/project -o cyclonedx-json > sbom.cdx.json
-          echo "✅ SBOM file created at $(pwd)/sbom.cdx.json"
+          echo "Installing cdxgen globally..."
+          npm install -g @cyclonedx/cdxgen
+          echo "✅ cdxgen installed successfully"
 
       # -----------------------------------------------------------
-      # 5️⃣ Upload SBOM artifact
+      # 5️⃣ Generate Application SBOM (CycloneDX)
       # -----------------------------------------------------------
-      - name: 📤 Upload SBOM artifact to GitHub
+      - name: 🧾 Generate Application SBOM
+        run: |
+          echo "🔍 Generating application SBOM..."
+          cdxgen -t nodejs -o app-sbom.cdx.json
+          echo "✅ Application SBOM created: $(pwd)/app-sbom.cdx.json"
+          head -n 10 app-sbom.cdx.json
+
+      # -----------------------------------------------------------
+      # 6️⃣ Build the container image
+      # -----------------------------------------------------------
+      - name: 🏗️ Build container image
+        run: |
+          echo "🏗️ Building container image for bookstore:latest ..."
+          docker build -t bookstore:latest .
+          echo "✅ Container image built successfully"
+
+      # -----------------------------------------------------------
+      # 7️⃣ Generate Container SBOM (CycloneDX)
+      # -----------------------------------------------------------
+      - name: 🧱 Generate Container SBOM
+        run: |
+          echo "🔍 Generating container SBOM..."
+          cdxgen -t docker -o container-sbom.cdx.json -p bookstore:latest
+          echo "✅ Container SBOM created: $(pwd)/container-sbom.cdx.json"
+          head -n 10 container-sbom.cdx.json
+
+      # -----------------------------------------------------------
+      # 8️⃣ Upload SBOMs as artifacts
+      # -----------------------------------------------------------
+      - name: 📤 Upload SBOM artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sbom-cyclonedx
-          path: sbom.cdx.json
+          name: cyclone-dx-sboms
+          path: |
+            app-sbom.cdx.json
+            container-sbom.cdx.json
 
       # -----------------------------------------------------------
-      # 6️⃣ Run FOSSA CLI Scan
+      # 9️⃣ Upload both SBOMs to FOSSA SBOM Import API
       # -----------------------------------------------------------
-      - name: 🔍 Run FOSSA dependency & license analysis
-        uses: fossas/fossa-action@v1
-        with:
-          api-key: ${{ secrets.FOSSA_API_KEY }}
-
-      # -----------------------------------------------------------
-      # 7️⃣ Upload SBOM to FOSSA SBOM Import API
-      # -----------------------------------------------------------
-      - name: ☁️ Upload SBOM to FOSSA dashboard
+      - name: ☁️ Upload SBOMs to FOSSA dashboard
         env:
           FOSSA_API_KEY: ${{ secrets.FOSSA_API_KEY }}
         run: |
-          echo "☁️ Uploading CycloneDX SBOM to FOSSA API..."
-          curl -s -o response.json -w "%{http_code}" \
+          echo "☁️ Uploading Application SBOM to FOSSA API..."
+          curl -s -o response_app.json -w "%{http_code}" \
             -X POST "https://app.fossa.com/api/projects/custom/upload" \
             -H "Authorization: token ${FOSSA_API_KEY}" \
-            -F "name=nodejs-bookstore-api" \
+            -F "name=nodejs-bookstore-api-application" \
             -F "format=cyclonedx" \
-            -F "file=@sbom.cdx.json"
-          echo "✅ SBOM upload complete — check your FOSSA dashboard under 'Imported SBOMs'"
+            -F "file=@app-sbom.cdx.json"
+
+          echo "☁️ Uploading Container SBOM to FOSSA API..."
+          curl -s -o response_container.json -w "%{http_code}" \
+            -X POST "https://app.fossa.com/api/projects/custom/upload" \
+            -H "Authorization: token ${FOSSA_API_KEY}" \
+            -F "name=nodejs-bookstore-api-container" \
+            -F "format=cyclonedx" \
+            -F "file=@container-sbom.cdx.json"
+
+          echo "✅ Both SBOMs uploaded to FOSSA successfully!"
 
       # -----------------------------------------------------------
-      # 8️⃣ Display SBOM summary (optional)
+      # 🔟 Display summary (optional)
       # -----------------------------------------------------------
-      - name: 📊 Display SBOM summary
+      - name: 📊 Display SBOM Summary
         run: |
-          echo "Top of SBOM file:"
-          head -n 15 sbom.cdx.json
-          echo "✅ SBOM validation done"
+          echo "Application SBOM snippet:"
+          head -n 10 app-sbom.cdx.json
+          echo ""
+          echo "Container SBOM snippet:"
+          head -n 10 container-sbom.cdx.json
+          echo "✅ SBOM generation and uploads complete!"
