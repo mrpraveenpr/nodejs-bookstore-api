@@ -69,46 +69,115 @@ jobs:
           # Preload shim via NODE_OPTIONS so it exists when cdxgen loads.
           NODE_OPTIONS="-r /tmp/file-shim.js" npx --yes @cyclonedx/cdxgen@latest -t nodejs -o app-sbom.cdx.json
           echo "✅ Application SBOM created → $(pwd)/app-sbom.cdx.json"
-        # keep logs in case of failure
-        shell: bash
+name: FOSSA + CycloneDX SBOM Workflow (feature/fossa-sbom)
+
+on:
+  push:
+    branches: [ feature/fossa-sbom ]
+  pull_request:
+    branches: [ feature/fossa-sbom ]
+
+jobs:
+  fossa-cdxgen-pipeline:
+    name: Generate Application & Container SBOM with CycloneDX + Trivy
+    runs-on: ubuntu-latest
+    env:
+      FOSSA_API_KEY: ${{ secrets.FOSSA_API_KEY }}
+
+    steps:
+      # -----------------------------------------------------------
+      # 1️⃣ Checkout repo
+      # -----------------------------------------------------------
+      - name: 🧩 Checkout source code
+        uses: actions/checkout@v4
 
       # -----------------------------------------------------------
-      # Build container image
+      # 2️⃣ Setup Node.js 20
       # -----------------------------------------------------------
-      - name: 🏗️ Build container image
+      - name: ⚙️ Setup Node.js (v20)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      # -----------------------------------------------------------
+      # 3️⃣ Install dependencies
+      # -----------------------------------------------------------
+      - name: 📦 Install npm dependencies
+        run: |
+          set -euo pipefail
+          echo "Installing dependencies..."
+          npm ci
+          echo "✅ Installation complete"
+
+      # -----------------------------------------------------------
+      # 4️⃣ Create global.File shim for cdxgen (fix ReferenceError)
+      # -----------------------------------------------------------
+      - name: 🩹 Create global.File shim
+        run: |
+          cat > /tmp/file-shim.js <<'JS'
+          // Minimal File shim for Node so libraries expecting browser File don't crash.
+          const { Blob } = globalThis;
+          if (typeof globalThis.File === 'undefined') {
+            globalThis.File = class File extends Blob {
+              constructor(bits = [], name = 'file', options = {}) {
+                super(bits, options);
+                this.name = name;
+                this.lastModified = options.lastModified || Date.now();
+              }
+            };
+          }
+          JS
+          echo "✅ File shim ready"
+
+      # -----------------------------------------------------------
+      # 5️⃣ Generate Application SBOM (Node.js)
+      # -----------------------------------------------------------
+      - name: 🧾 Generate Application SBOM (CycloneDX)
+        run: |
+          set -euo pipefail
+          echo "🔍 Generating Application SBOM using @cyclonedx/cdxgen..."
+          NODE_OPTIONS="-r /tmp/file-shim.js" npx --yes @cyclonedx/cdxgen@latest -t nodejs -o app-sbom.cdx.json
+          echo "✅ Application SBOM created → $(pwd)/app-sbom.cdx.json"
+
+      # -----------------------------------------------------------
+      # 6️⃣ Build and export Docker image
+      # -----------------------------------------------------------
+      - name: 🏗️ Build and export Docker image
         run: |
           set -euo pipefail
           echo "🏗️ Building container image (bookstore:latest)..."
           docker build -t bookstore:latest .
-          echo "✅ Container image built successfully"
+          echo "✅ Docker image built successfully"
+          echo "📦 Saving image as bookstore.tar..."
+          docker save bookstore:latest -o bookstore.tar
+          ls -lh bookstore.tar
+          echo "✅ Docker image saved"
 
       # -----------------------------------------------------------
-      # Install Trivy (latest) to generate CycloneDX SBOM for Docker image
+      # 7️⃣ Install Trivy
       # -----------------------------------------------------------
       - name: 🔧 Install Trivy
         run: |
           set -euo pipefail
-          # get a recent Trivy binary and install to /usr/local/bin
+          echo "📥 Installing Trivy..."
           TRIVY_VER=$(curl -sSL https://api.github.com/repos/aquasecurity/trivy/releases/latest | grep '"tag_name":' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
-          echo "Installing Trivy ${TRIVY_VER:-latest}"
-          curl -sfL "https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VER}/trivy_${TRIVY_VER#v}_Linux-64bit.tar.gz" \
-            | tar -xz -C /tmp
+          curl -sfL "https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VER}/trivy_${TRIVY_VER#v}_Linux-64bit.tar.gz" | tar -xz -C /tmp
           sudo mv /tmp/trivy /usr/local/bin/trivy
           trivy --version
 
       # -----------------------------------------------------------
-      # Generate Container SBOM using Trivy (cyclonedx)
+      # 8️⃣ Generate Container SBOM (Trivy CycloneDX)
       # -----------------------------------------------------------
       - name: 🧱 Generate Container SBOM (Trivy -> CycloneDX)
         run: |
           set -euo pipefail
-          echo "🔍 Generating Container SBOM using Trivy in CycloneDX format..."
-          # trivy sbom --format cyclonedx --output file
-          trivy sbom --format cyclonedx --output container-sbom.cdx.json bookstore:latest
+          echo "🔍 Generating Container SBOM (CycloneDX format with vulnerabilities)..."
+          trivy sbom --format cyclonedx --scanners vuln --input ./bookstore.tar --output container-sbom.cdx.json
           echo "✅ Container SBOM created → $(pwd)/container-sbom.cdx.json"
 
       # -----------------------------------------------------------
-      # Upload SBOMs as artifacts
+      # 9️⃣ Upload SBOMs as artifacts
       # -----------------------------------------------------------
       - name: 📤 Upload SBOM artifacts to GitHub
         uses: actions/upload-artifact@v4
@@ -119,12 +188,10 @@ jobs:
             container-sbom.cdx.json
 
       # -----------------------------------------------------------
-      # Upload both SBOMs to FOSSA SBOM Import API
+      # 🔟 Upload both SBOMs to FOSSA via API
       # -----------------------------------------------------------
       - name: ☁️ Upload SBOMs to FOSSA dashboard
         if: ${{ env.FOSSA_API_KEY != '' }}
-        env:
-          FOSSA_API_KEY: ${{ secrets.FOSSA_API_KEY }}
         run: |
           set -euo pipefail
           echo "☁️ Uploading Application SBOM to FOSSA..."
@@ -133,27 +200,32 @@ jobs:
             -H "Authorization: token ${FOSSA_API_KEY}" \
             -F "name=nodejs-bookstore-api-application" \
             -F "format=cyclonedx" \
-            -F "file=@app-sbom.cdx.json" )
-          echo "FOSSA app upload HTTP code: ${http_code_app}"
+            -F "file=@app-sbom.cdx.json")
+          echo "FOSSA Application Upload HTTP: ${http_code_app}"
+
           echo "☁️ Uploading Container SBOM to FOSSA..."
           http_code_container=$(curl -s -o /tmp/resp_container -w "%{http_code}" \
             -X POST "https://app.fossa.com/api/projects/custom/upload" \
             -H "Authorization: token ${FOSSA_API_KEY}" \
             -F "name=nodejs-bookstore-api-container" \
             -F "format=cyclonedx" \
-            -F "file=@container-sbom.cdx.json" )
-          echo "FOSSA container upload HTTP code: ${http_code_container}"
+            -F "file=@container-sbom.cdx.json")
+          echo "FOSSA Container Upload HTTP: ${http_code_container}"
+
           if [[ "$http_code_app" != "200" && "$http_code_app" != "201" ]]; then
-            echo "WARN: application SBOM upload returned code $http_code_app"
+            echo "⚠️ Application SBOM upload failed. Response:"
             cat /tmp/resp_app || true
           fi
           if [[ "$http_code_container" != "200" && "$http_code_container" != "201" ]]; then
-            echo "WARN: container SBOM upload returned code $http_code_container"
+            echo "⚠️ Container SBOM upload failed. Response:"
             cat /tmp/resp_container || true
           fi
-          echo "✅ SBOMs upload to FOSSA attempted."
+          echo "✅ Upload step complete."
 
-      - name: 📊 Display SBOM summaries (optional)
+      # -----------------------------------------------------------
+      # 11️⃣ Display preview (optional)
+      # -----------------------------------------------------------
+      - name: 📊 Display SBOM summaries
         run: |
           echo "===== Application SBOM Preview ====="
           head -n 20 app-sbom.cdx.json || true
