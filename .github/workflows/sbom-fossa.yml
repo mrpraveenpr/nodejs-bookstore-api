@@ -131,7 +131,7 @@ jobs:
           http_code_app=$(curl -s -o /tmp/resp_app -w "%{http_code}" \
             -X POST "https://app.fossa.com/api/projects/custom/upload" \
             -H "Authorization: token ${FOSSA_API_KEY}" \
-            -F "name=nodejs-bookstore-api-application" \
+            -F "name=https://github.com/mrpraveenpr/nodejs-bookstore-api" \
             -F "format=cyclonedx" \
             -F "file=@app-sbom.cdx.json")
           echo "FOSSA Application Upload HTTP: ${http_code_app}"
@@ -140,20 +140,10 @@ jobs:
           http_code_container=$(curl -s -o /tmp/resp_container -w "%{http_code}" \
             -X POST "https://app.fossa.com/api/projects/custom/upload" \
             -H "Authorization: token ${FOSSA_API_KEY}" \
-            -F "name=nodejs-bookstore-api-container" \
+            -F "name=https://github.com/mrpraveenpr/nodejs-bookstore-api" \
             -F "format=cyclonedx" \
             -F "file=@container-sbom.cdx.json")
           echo "FOSSA Container Upload HTTP: ${http_code_container}"
-
-          if [[ "$http_code_app" != "200" && "$http_code_app" != "201" ]]; then
-            echo "⚠️ Application SBOM upload failed. Response:"
-            cat /tmp/resp_app || true
-          fi
-          if [[ "$http_code_container" != "200" && "$http_code_container" != "201" ]]; then
-            echo "⚠️ Container SBOM upload failed. Response:"
-            cat /tmp/resp_container || true
-          fi
-          echo "✅ Upload step complete."
 
       # -----------------------------------------------------------
       # 11️⃣ Display preview (optional)
