@@ -53,7 +53,7 @@ jobs:
           JS
 
       # -----------------------------------------------------------
-      # 5️⃣ Generate Application SBOM
+      # 5️⃣ Generate Application SBOM (CycloneDX)
       # -----------------------------------------------------------
       - name: 🧾 Generate Application SBOM
         run: |
@@ -80,7 +80,7 @@ jobs:
           trivy --version
 
       # -----------------------------------------------------------
-      # 8️⃣ Generate Container SBOM
+      # 8️⃣ Generate Container SBOM (Trivy)
       # -----------------------------------------------------------
       - name: 🧱 Generate Container SBOM
         run: |
@@ -89,7 +89,7 @@ jobs:
           echo "✅ Container SBOM created → $(pwd)/container-sbom.cdx.json"
 
       # -----------------------------------------------------------
-      # 9️⃣ Upload SBOMs as Artifacts
+      # 9️⃣ Upload SBOMs as GitHub Artifacts
       # -----------------------------------------------------------
       - name: 📤 Upload SBOMs as Artifacts
         uses: actions/upload-artifact@v4
@@ -111,9 +111,9 @@ jobs:
           echo "✅ SBOM files verified and ready for upload."
 
       # -----------------------------------------------------------
-      # 11️⃣ Upload to FOSSA using official CLI
+      # 11️⃣ Upload to FOSSA using official CLI (v3.12+)
       # -----------------------------------------------------------
-      - name: ☁️ Upload SBOMs to FOSSA (fossa-cli v3.12+)
+      - name: ☁️ Upload SBOMs to FOSSA
         run: |
           set -euo pipefail
           echo "📦 Installing FOSSA CLI using official install script..."
@@ -130,19 +130,17 @@ jobs:
           echo ""
 
           echo "☁️ Uploading Application SBOM to FOSSA..."
-          # ✅ CLI command fixed (upload → analyze)
-          fossa sbom analyze \
+          # ✅ CLI syntax: SBOM file is positional argument (no --file)
+          fossa sbom analyze app-sbom.cdx.json \
             --fossa-api-key "${FOSSA_API_KEY}" \
             --project "https://github.com/${{ github.repository }}" \
-            --file app-sbom.cdx.json \
             --format cyclonedx || { echo "❌ Application SBOM upload failed"; exit 1; }
 
           echo ""
           echo "☁️ Uploading Container SBOM to FOSSA..."
-          fossa sbom analyze \
+          fossa sbom analyze container-sbom.cdx.json \
             --fossa-api-key "${FOSSA_API_KEY}" \
             --project "https://github.com/${{ github.repository }}-container" \
-            --file container-sbom.cdx.json \
             --format cyclonedx || { echo "❌ Container SBOM upload failed"; exit 1; }
 
           echo ""
