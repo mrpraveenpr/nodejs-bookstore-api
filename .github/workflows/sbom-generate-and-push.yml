@@ -1,0 +1,69 @@
+name: Generate, Store, and Push SBOM to sbom-manager
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  sbom-process:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1️⃣ Checkout the source code
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # 2️⃣ Install CycloneDX SBOM generator
+      - name: Install CycloneDX Generator
+        run: npm install -g @cyclonedx/cdxgen
+
+      # 3️⃣ Generate SBOM
+      - name: Generate SBOM
+        run: |
+          echo "🔍 Generating SBOM..."
+          cdxgen -r -o sbom.json -t nodejs
+          echo "✅ SBOM generated successfully"
+          ls -lh sbom.json
+
+      # 4️⃣ Upload SBOM as an artifact (for traceability)
+      - name: Upload SBOM Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-report
+          path: sbom.json
+
+      # 5️⃣ Push SBOM to sbom-manager repository
+      - name: Push SBOM to sbom-manager
+        env:
+          TOKEN: ${{ secrets.SBOM_PUSH_TOKEN }}
+        run: |
+          echo "🚀 Preparing to push SBOM to sbom-manager..."
+
+          git config --global user.email "praveenvijay140@gmail.com"
+          git config --global user.name "GitHub Actions Bot"
+
+          echo "📦 Cloning sbom-manager repo..."
+          git clone https://x-access-token:${TOKEN}@github.com/mrpraveenpr/sbom-manager.git
+
+          echo "📁 Creating target folder..."
+          mkdir -p sbom-manager/sboms/nodejs-bookstore-api
+
+          echo "📋 Copying SBOM file..."
+          cp sbom.json sbom-manager/sboms/nodejs-bookstore-api/sbom.json
+
+          echo "🧾 Adding commit..."
+          cd sbom-manager
+          git add .
+          git commit -m "Add SBOM from nodejs-bookstore-api - $(date +'%Y-%m-%d %H:%M:%S')" || echo "No changes to commit"
+
+          echo "📤 Pushing to main branch..."
+          git push origin main
+
+      # 6️⃣ Confirmation output
+      - name: Summary
+        run: |
+          echo "✅ SBOM workflow completed!"
+          echo "→ Generated and stored artifact: sbom-report"
+          echo "→ Pushed SBOM to: mrpraveenpr/sbom-manager/sboms/nodejs-bookstore-api/sbom.json"
