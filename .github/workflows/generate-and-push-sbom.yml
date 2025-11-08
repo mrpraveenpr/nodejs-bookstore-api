@@ -1,29 +1,26 @@
-name: Generate and Push SBOM to SBOM Manager
+name: Push SBOM Artifact to sbom-manager Repository
 
 on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
+  workflow_run:
+    workflows: ["Generate SBOM and Store Artifact"]
+    types:
+      - completed
 
 jobs:
-  sbom:
+  push-to-manager:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source code
-        uses: actions/checkout@v4
+      - name: Download SBOM Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom-report
+          path: ./sboms
 
-      - name: Install CycloneDX SBOM generator
-        run: |
-          npm install -g @cyclonedx/cdxgen
+      - name: Verify Artifact
+        run: ls -lh ./sboms
 
-      - name: Generate SBOM
-        run: |
-          cdxgen -r -o sbom.json -t nodejs
-          ls -lh sbom.json
-
-      - name: Push SBOM to sbom-manager repository
+      - name: Push SBOM to sbom-manager
         env:
           TOKEN: ${{ secrets.SBOM_PUSH_TOKEN }}
         run: |
@@ -36,8 +33,8 @@ jobs:
           echo "📁 Creating target folder..."
           mkdir -p sbom-manager/sboms/nodejs-bookstore-api
 
-          echo "📋 Copying SBOM..."
-          cp sbom.json sbom-manager/sboms/nodejs-bookstore-api/sbom.json
+          echo "📋 Copying SBOM artifact..."
+          cp ./sboms/sbom.json sbom-manager/sboms/nodejs-bookstore-api/sbom.json
 
           cd sbom-manager
           git add .
