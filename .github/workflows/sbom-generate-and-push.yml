@@ -14,7 +14,7 @@ jobs:
     env:
       FOSSA_API_KEY: ${{ secrets.FOSSA_API_KEY }}
       TOKEN: ${{ secrets.SBOM_PUSH_TOKEN }}
-      FOSSA_PROJECT_ID: ${{ secrets.FOSSA_PROJECT_ID }}
+      FOSSA_PROJECT_ID: ${{ secrets.FOSSA_PROJECT_ID }} # Ensure this secret is set in your repo
 
     steps:
       # -----------------------------------------------------------
@@ -93,17 +93,27 @@ jobs:
           echo "✅ Container SBOM created → $(pwd)/container-sbom.cdx.json"
 
       # -----------------------------------------------------------
-      # 9️⃣ Install CycloneDX CLI for merging
+      # 9️⃣ Install CycloneDX CLI for merging (FIXED)
       # -----------------------------------------------------------
       - name: 🧰 Install CycloneDX CLI
         run: |
+          set -euo pipefail
           echo "📦 Installing CycloneDX CLI..."
-          VERSION="v0.25.0"  # You can update this if a newer version is released
-          curl -L -o cdx.tar.gz "https://github.com/CycloneDX/cyclonedx-cli/releases/download/${VERSION}/cyclonedx-linux-x64.tar.gz"
+          VERSION="v0.25.0"
+          
+          # --- FIX: Corrected filename to match the GitHub release asset ---
+          curl -L -o cdx.tar.gz "https://github.com/CycloneDX/cyclonedx-cli/releases/download/${VERSION}/cyclonedx-cli-${VERSION#v}-linux-x64.tar.gz"
+          
+          # Verify download
+          if ! file cdx.tar.gz | grep -q 'gzip compressed'; then
+            echo "❌ Failed to download CycloneDX CLI (file was not gzip)."
+            exit 1
+          fi
+
           sudo tar -xzf cdx.tar.gz -C /usr/local/bin/
-          chmod +x /usr/local/bin/cyclonedx
+          sudo chmod +x /usr/local/bin/cyclonedx
           echo "✅ CycloneDX CLI installed successfully!"
-          cyclonedx version || echo "⚠️ Unable to show version"
+          cyclonedx --version
 
       # -----------------------------------------------------------
       # 🔟 Upload both SBOMs as artifacts
@@ -152,11 +162,37 @@ jobs:
           echo "✅ Merged SBOM pushed and old files archived."
 
       # -----------------------------------------------------------
+      # 1️⃣1️⃣b Install FOSSA CLI (NEW STEP)
+      # -----------------------------------------------------------
+      - name: 🔧 Install FOSSA CLI
+        run: |
+          set -euo pipefail
+          echo "📦 Installing FOSSA CLI using official install script..."
+          
+          # Use the official install script
+          curl -H 'Cache-Control: no-cache' https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.sh | sudo bash
+          
+          echo "✅ Installed FOSSA CLI → $(fossa --version)"
+          echo ""
+          
+          echo "🔑 Verifying FOSSA token..."
+          fossa list-targets --api-key "${FOSSA_API_KEY}" || { echo "❌ Invalid or expired FOSSA API key"; exit 1; }
+          echo "✅ FOSSA token verified."
+
+      # -----------------------------------------------------------
       # 1️⃣2️⃣ Upload merged SBOM to FOSSA
       # -----------------------------------------------------------
       - name: 🔐 Upload Merged SBOM to FOSSA
         run: |
           echo "🔄 Uploading merged SBOM to FOSSA..."
+          # Need to be in the correct directory where the merged file is
           cd sbom-manager/sboms/nodejs-bookstore-api
-          fossa sbom upload --file merged-sbom.cdx.json --project-id $FOSSA_PROJECT_ID || echo "⚠️ FOSSA upload skipped"
+          
+          echo "Located merged file at $(pwd)/merged-sbom.cdx.json"
+          
+          fossa sbom upload \
+            --api-key "${FOSSA_API_KEY}" \
+            --file merged-sbom.cdx.json \
+            --project-id $FOSSA_PROJECT_ID || { echo "❌ FOSSA upload failed"; exit 1; }
+            
           echo "✅ Merged SBOM uploaded to FOSSA successfully."
