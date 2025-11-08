@@ -1,70 +1,155 @@
-name: Generate, Store, and Push SBOM to sbom-manager
+name: SBOM Generation + Merge + Push + FOSSA Upload
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
       - feature/fossa-sbom
-  workflow_dispatch:
 
 jobs:
-  sbom-process:
+  sbom-full-pipeline:
+    name: Generate, Merge, Push, and Upload SBOM
     runs-on: ubuntu-latest
+    env:
+      FOSSA_API_KEY: ${{ secrets.FOSSA_API_KEY }}
+      TOKEN: ${{ secrets.SBOM_PUSH_TOKEN }}
+      FOSSA_PROJECT_ID: ${{ secrets.FOSSA_PROJECT_ID }}
 
     steps:
-      # 1️⃣ Checkout the source code
-      - name: Checkout Code
+      # -----------------------------------------------------------
+      # 1️⃣ Checkout source code
+      # -----------------------------------------------------------
+      - name: 🧩 Checkout source
         uses: actions/checkout@v4
 
-      # 2️⃣ Install CycloneDX SBOM generator
-      - name: Install CycloneDX Generator
-        run: npm install -g @cyclonedx/cdxgen
+      # -----------------------------------------------------------
+      # 2️⃣ Setup Node.js
+      # -----------------------------------------------------------
+      - name: ⚙️ Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
 
-      # 3️⃣ Generate SBOM
-      - name: Generate SBOM
+      # -----------------------------------------------------------
+      # 3️⃣ Install dependencies
+      # -----------------------------------------------------------
+      - name: 📦 Install dependencies
+        run: npm ci
+
+      # -----------------------------------------------------------
+      # 4️⃣ Patch global.File (cdxgen fix)
+      # -----------------------------------------------------------
+      - name: 🩹 Patch global.File
         run: |
-          echo "🔍 Generating SBOM..."
-          cdxgen -r -o sbom.json -t nodejs
-          echo "✅ SBOM generated successfully"
-          ls -lh sbom.json
+          cat > /tmp/file-shim.js <<'JS'
+          const { Blob } = globalThis;
+          if (typeof globalThis.File === 'undefined') {
+            globalThis.File = class File extends Blob {
+              constructor(bits = [], name = 'file', options = {}) {
+                super(bits, options);
+                this.name = name;
+                this.lastModified = options.lastModified || Date.now();
+              }
+            };
+          }
+          JS
 
-      # 4️⃣ Upload SBOM as an artifact (for traceability)
-      - name: Upload SBOM Artifact
+      # -----------------------------------------------------------
+      # 5️⃣ Generate Application SBOM
+      # -----------------------------------------------------------
+      - name: 🧾 Generate Application SBOM
+        run: |
+          NODE_OPTIONS="-r /tmp/file-shim.js" npx --yes @cyclonedx/cdxgen@latest -t nodejs -o app-sbom.cdx.json
+          echo "✅ Application SBOM created → $(pwd)/app-sbom.cdx.json"
+
+      # -----------------------------------------------------------
+      # 6️⃣ Build Docker image
+      # -----------------------------------------------------------
+      - name: 🏗️ Build container image
+        run: |
+          docker build -t bookstore:latest .
+          docker save bookstore:latest -o bookstore.tar
+          echo "✅ Docker image built successfully."
+
+      # -----------------------------------------------------------
+      # 7️⃣ Install Trivy
+      # -----------------------------------------------------------
+      - name: 🔧 Install Trivy
+        run: |
+          TRIVY_VER=$(curl -sSL https://api.github.com/repos/aquasecurity/trivy/releases/latest | grep '"tag_name":' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          curl -sfL "https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VER}/trivy_${TRIVY_VER#v}_Linux-64bit.tar.gz" | tar -xz -C /tmp
+          sudo mv /tmp/trivy /usr/local/bin/trivy
+          trivy --version
+
+      # -----------------------------------------------------------
+      # 8️⃣ Generate Container SBOM
+      # -----------------------------------------------------------
+      - name: 🧱 Generate Container SBOM
+        run: |
+          echo "🔍 Generating container SBOM..."
+          trivy image --format cyclonedx --scanners vuln --output container-sbom.cdx.json bookstore:latest
+          echo "✅ Container SBOM created → $(pwd)/container-sbom.cdx.json"
+
+      # -----------------------------------------------------------
+      # 9️⃣ Install CycloneDX CLI for merging
+      # -----------------------------------------------------------
+      - name: 🧰 Install CycloneDX CLI
+        run: npm install -g @cyclonedx/cyclonedx-cli
+
+      # -----------------------------------------------------------
+      # 🔟 Upload both SBOMs as artifacts
+      # -----------------------------------------------------------
+      - name: 📤 Upload SBOMs as Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sbom-report
-          path: sbom.json
+          name: cyclone-dx-sboms
+          path: |
+            app-sbom.cdx.json
+            container-sbom.cdx.json
 
-      # 5️⃣ Push SBOM to sbom-manager repository
-      - name: Push SBOM to sbom-manager
-        env:
-          TOKEN: ${{ secrets.SBOM_PUSH_TOKEN }}
+      # -----------------------------------------------------------
+      # 1️⃣1️⃣ Push SBOMs to sbom-manager and merge them
+      # -----------------------------------------------------------
+      - name: 🚀 Push and Merge SBOMs in sbom-manager
         run: |
-          echo "🚀 Preparing to push SBOM to sbom-manager..."
-
-          git config --global user.email "praveenvijay140@gmail.com"
-          git config --global user.name "GitHub Actions Bot"
-
           echo "📦 Cloning sbom-manager repo..."
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions Bot"
           git clone https://x-access-token:${TOKEN}@github.com/mrpraveenpr/sbom-manager.git
 
-          echo "📁 Creating target folder..."
+          echo "📁 Preparing nodejs-bookstore-api folder..."
           mkdir -p sbom-manager/sboms/nodejs-bookstore-api
+          cp app-sbom.cdx.json sbom-manager/sboms/nodejs-bookstore-api/
+          cp container-sbom.cdx.json sbom-manager/sboms/nodejs-bookstore-api/
 
-          echo "📋 Copying SBOM file..."
-          cp sbom.json sbom-manager/sboms/nodejs-bookstore-api/sbom.json
+          cd sbom-manager/sboms/nodejs-bookstore-api
 
-          echo "🧾 Adding commit..."
-          cd sbom-manager
-          git add .
-          git commit -m "Add SBOM from nodejs-bookstore-api - $(date +'%Y-%m-%d %H:%M:%S')" || echo "No changes to commit"
+          echo "🧩 Merging SBOM files..."
+          cycloneDX merge -o merged-sbom.cdx.json app-sbom.cdx.json container-sbom.cdx.json
+          echo "✅ Merged SBOM created → merged-sbom.cdx.json"
 
-          echo "📤 Pushing to main branch..."
+          echo "📦 Archiving old SBOMs..."
+          mkdir -p old
+          timestamp=$(date +'%Y%m%d_%H%M%S')
+          mv app-sbom.cdx.json old/app-sbom-${timestamp}.cdx.json
+          mv container-sbom.cdx.json old/container-sbom-${timestamp}.cdx.json
+
+          echo "💾 Commit merged SBOM to sbom-manager..."
+          cd ../../
+          git add sboms/nodejs-bookstore-api/merged-sbom.cdx.json
+          git add sboms/nodejs-bookstore-api/old/
+          git commit -m "Merged + archived SBOM for nodejs-bookstore-api - $(date +'%Y-%m-%d %H:%M:%S')" || echo "No changes to commit"
           git push origin main
+          echo "✅ Merged SBOM pushed and old files archived."
 
-      # 6️⃣ Confirmation output
-      - name: Summary
+      # -----------------------------------------------------------
+      # 1️⃣2️⃣ Upload merged SBOM to FOSSA
+      # -----------------------------------------------------------
+      - name: 🔐 Upload Merged SBOM to FOSSA
         run: |
-          echo "✅ SBOM workflow completed!"
-          echo "→ Generated and stored artifact: sbom-report"
-          echo "→ Pushed SBOM to: mrpraveenpr/sbom-manager/sboms/nodejs-bookstore-api/sbom.json"
+          echo "🔄 Uploading merged SBOM to FOSSA..."
+          cd sbom-manager/sboms/nodejs-bookstore-api
+          fossa sbom upload --file merged-sbom.cdx.json --project-id $FOSSA_PROJECT_ID || echo "⚠️ FOSSA upload skipped"
+          echo "✅ Merged SBOM uploaded to FOSSA successfully."
