@@ -95,8 +95,16 @@ jobs:
       # -----------------------------------------------------------
       # 9️⃣ Install CycloneDX CLI for merging
       # -----------------------------------------------------------
+      -
       - name: 🧰 Install CycloneDX CLI
-        run: npm install -g @cyclonedx/cyclonedx-cli
+        run: |
+           echo "📦 Installing CycloneDX CLI..."
+           LATEST=$(curl -s https://api.github.com/repos/CycloneDX/cyclonedx-cli/releases/latest | grep "tag_name" | cut -d '"' -f 4)
+           curl -L -o cdx.zip "https://github.com/CycloneDX/cyclonedx-cli/releases/download/${LATEST}/cyclonedx-linux-x64.zip"
+           unzip cdx.zip -d /usr/local/bin/
+           chmod +x /usr/local/bin/cyclonedx
+           cyclonedx version
+
 
       # -----------------------------------------------------------
       # 🔟 Upload both SBOMs as artifacts
