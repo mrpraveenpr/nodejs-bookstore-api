@@ -25,8 +25,7 @@ jobs:
 
       # 3️⃣ Install dependencies
       - name: 📦 Install dependencies
-        run: |
-          npm ci
+        run: npm ci
 
       # 4️⃣ Add global.File shim (fix for cdxgen)
       - name: 🩹 Patch global.File
@@ -81,16 +80,34 @@ jobs:
             app-sbom.cdx.json
             container-sbom.cdx.json
 
-      # 🔟 Upload both SBOMs to FOSSA using CLI (✅ works on app.fossa.com)
+      # 🔟 Upload both SBOMs to FOSSA using CLI (✅ verified working version)
       - name: ☁️ Upload SBOMs to FOSSA using CLI
         run: |
           set -euo pipefail
-          echo "📦 Installing latest FOSSA CLI from GitHub..."
-          FOSSA_VER=$(curl -s https://api.github.com/repos/fossas/fossa-cli/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-          curl -L "https://github.com/fossas/fossa-cli/releases/download/${FOSSA_VER}/fossa-cli_${FOSSA_VER#v}_linux_amd64.tar.gz" -o fossa.tar.gz
+
+          echo "📦 Installing FOSSA CLI (stable v3.9.4)..."
+          curl -L -o fossa.tar.gz "https://github.com/fossas/fossa-cli/releases/download/v3.9.4/fossa-cli_3.9.4_linux_amd64.tar.gz"
+
+          # Verify tarball
+          if ! file fossa.tar.gz | grep -q 'gzip compressed'; then
+            echo "❌ Invalid FOSSA CLI archive (download failed or not gzip)."
+            echo "File contents:"
+            head -n 20 fossa.tar.gz || true
+            exit 1
+          fi
+
           tar -xzf fossa.tar.gz
           sudo mv fossa /usr/local/bin/fossa
           fossa version
+
+          echo ""
+          echo "🔑 Verifying FOSSA token..."
+          if ! fossa whoami --api-key "${FOSSA_API_KEY}" > /tmp/fossa_user.txt 2>&1; then
+            echo "❌ Invalid or expired FOSSA API key"
+            cat /tmp/fossa_user.txt
+            exit 1
+          fi
+          echo "✅ FOSSA token verified."
 
           echo ""
           echo "☁️ Uploading Application SBOM to FOSSA..."
@@ -108,5 +125,5 @@ jobs:
             --format cyclonedx \
             --api-key "${FOSSA_API_KEY}"
 
+          echo ""
           echo "✅ SBOMs successfully uploaded to FOSSA via CLI."
-
