@@ -128,63 +128,59 @@ jobs:
       # -----------------------------------------------------------
       # 12️⃣ Upload both SBOMs to FOSSA via official CLI binary
       # -----------------------------------------------------------
+      # -----------------------------------------------------------
+      # 12️⃣ Upload both SBOMs to FOSSA via official CLI binary
+      # -----------------------------------------------------------
       - name: ☁️ Upload SBOMs to FOSSA using official CLI
         run: |
           set -euo pipefail
-
-          echo "📦 Installing FOSSA CLI (auto-detecting latest stable release)..."
-
-          # Step 1: Try to get latest valid asset URL from GitHub API
-          FOSSA_URL=$(curl -s https://api.github.com/repos/fossas/fossa-cli/releases \
-            | grep browser_download_url \
-            | grep "Linux_x86_64.tar.gz" \
-            | grep -v "rc" \
-            | head -n 1 \
-            | cut -d '"' -f 4)
-
-          # Step 2: Fallback if not found
-          if [ -z "${FOSSA_URL}" ]; then
-            echo "⚠️ Could not detect latest release, falling back to v3.11.3"
-            FOSSA_URL="https://github.com/fossas/fossa-cli/releases/download/v3.11.3/fossa-cli_3.11.3_Linux_x86_64.tar.gz"
+          echo "📦 Installing FOSSA CLI (latest verified release)..."
+          
+          # Find latest version dynamically (FIXED: added | head -1 |)
+          FOSSA_VERSION=$(curl -s https://api.github.com/repos/fossas/fossa-cli/releases/latest | grep '"tag_name":' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          
+          if [ -z "$FOSSA_VERSION" ]; then
+            echo "❌ Could not find latest FOSSA version. Aborting."
+            exit 1
           fi
 
-          echo "⬇️ Downloading FOSSA CLI from: ${FOSSA_URL}"
+          FOSSA_URL="https://github.com/fossas/fossa-cli/releases/download/${FOSSA_VERSION}/fossa-cli_${FOSSA_VERSION#v}_Linux_x86_64.tar.gz"
+          
+          echo "⬇️ Downloading FOSSA CLI from ${FOSSA_URL}"
           curl -fsSL -o fossa.tar.gz "${FOSSA_URL}" || { echo "❌ Failed to download FOSSA CLI"; exit 1; }
-
+          
+          # Validate gzip archive
           if ! file fossa.tar.gz | grep -q 'gzip compressed'; then
             echo "❌ Invalid FOSSA CLI archive (download failed or not gzip)."
+            echo "File contents (debug):"
             head -n 20 fossa.tar.gz || true
             exit 1
           fi
-
+          
           tar -xzf fossa.tar.gz
           sudo mv fossa /usr/local/bin/fossa
-          fossa version || { echo "❌ FOSSA CLI install failed"; exit 1; }
-
+          echo "✅ Installed FOSSA CLI → $(fossa version)"
           echo ""
+          
           echo "🔑 Verifying FOSSA token..."
-          if ! fossa whoami --api-key "${FOSSA_API_KEY}" > /tmp/fossa_user.txt 2>&1; then
-            echo "❌ Invalid or expired FOSSA API key"
-            cat /tmp/fossa_user.txt
-            exit 1
-          fi
+          fossa whoami --api-key "${FOSSA_API_KEY}" || { echo "❌ Invalid or expired FOSSA API key"; exit 1; }
           echo "✅ FOSSA token verified."
-
           echo ""
+          
           echo "☁️ Uploading Application SBOM to FOSSA..."
           fossa sbom upload \
             --api-key "${FOSSA_API_KEY}" \
             --project "https://github.com/${{ github.repository }}" \
             --file ./sboms/app-sbom.cdx.json \
             --format cyclonedx || { echo "❌ Application SBOM upload failed"; exit 1; }
-
           echo ""
+          
           echo "☁️ Uploading Container SBOM to FOSSA..."
           fossa sbom upload \
             --api-key "${FOSSA_API_KEY}" \
             --project "https://github.com/${{ github.repository }}-container" \
             --file ./sboms/container-sbom.cdx.json \
             --format cyclonedx || { echo "❌ Container SBOM upload failed"; exit 1; }
-
           echo ""
+          
           echo "✅ SBOMs successfully uploaded to app.fossa.com!"
