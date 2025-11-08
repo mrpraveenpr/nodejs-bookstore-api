@@ -95,16 +95,14 @@ jobs:
       # -----------------------------------------------------------
       # 9️⃣ Install CycloneDX CLI for merging
       # -----------------------------------------------------------
-      -
       - name: 🧰 Install CycloneDX CLI
         run: |
-           echo "📦 Installing CycloneDX CLI..."
-           LATEST=$(curl -s https://api.github.com/repos/CycloneDX/cyclonedx-cli/releases/latest | grep "tag_name" | cut -d '"' -f 4)
-           curl -L -o cdx.zip "https://github.com/CycloneDX/cyclonedx-cli/releases/download/${LATEST}/cyclonedx-linux-x64.zip"
-           unzip cdx.zip -d /usr/local/bin/
-           chmod +x /usr/local/bin/cyclonedx
-           cyclonedx version
-
+          echo "📦 Installing CycloneDX CLI..."
+          LATEST=$(curl -s https://api.github.com/repos/CycloneDX/cyclonedx-cli/releases/latest | grep "tag_name" | cut -d '"' -f 4)
+          curl -L -o cdx.zip "https://github.com/CycloneDX/cyclonedx-cli/releases/download/${LATEST}/cyclonedx-linux-x64.zip"
+          unzip -o cdx.zip -d /usr/local/bin/
+          chmod +x /usr/local/bin/cyclonedx
+          cyclonedx version
 
       # -----------------------------------------------------------
       # 🔟 Upload both SBOMs as artifacts
@@ -123,7 +121,7 @@ jobs:
       - name: 🚀 Push and Merge SBOMs in sbom-manager
         run: |
           echo "📦 Cloning sbom-manager repo..."
-          git config --global user.email "github-actions@github.com"
+          git config --global user.email "praveenvijay140@gmail.com"
           git config --global user.name "GitHub Actions Bot"
           git clone https://x-access-token:${TOKEN}@github.com/mrpraveenpr/sbom-manager.git
 
@@ -135,7 +133,7 @@ jobs:
           cd sbom-manager/sboms/nodejs-bookstore-api
 
           echo "🧩 Merging SBOM files..."
-          cycloneDX merge -o merged-sbom.cdx.json app-sbom.cdx.json container-sbom.cdx.json
+          cyclonedx merge -o merged-sbom.cdx.json app-sbom.cdx.json container-sbom.cdx.json
           echo "✅ Merged SBOM created → merged-sbom.cdx.json"
 
           echo "📦 Archiving old SBOMs..."
