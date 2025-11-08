@@ -79,7 +79,6 @@ jobs:
             app-sbom.cdx.json
             container-sbom.cdx.json
 
-      # 🔟 Upload both SBOMs to FOSSA
       - name: ☁️ Upload SBOMs to FOSSA
         run: |
           set -euo pipefail
@@ -88,7 +87,7 @@ jobs:
           BRANCH="${{ github.ref_name }}" || BRANCH="${{ github.ref }}"
 
           echo "☁️ Uploading Application SBOM to FOSSA..."
-          curl -s -X POST "https://app.fossa.com/api/projects/custom/upload/v2" \
+          curl -v -X POST "https://app.fossa.com/api/projects/custom/upload" \
             -H "Authorization: token ${FOSSA_API_KEY}" \
             -F "project[name]=${REPO_URL}" \
             -F "project[revision]=${REVISION}" \
@@ -97,8 +96,9 @@ jobs:
             -F "format=cyclonedx" \
             -F "file=@app-sbom.cdx.json"
 
+          echo ""
           echo "☁️ Uploading Container SBOM to FOSSA..."
-          curl -s -X POST "https://app.fossa.com/api/projects/custom/upload/v2" \
+          curl -v -X POST "https://app.fossa.com/api/projects/custom/upload" \
             -H "Authorization: token ${FOSSA_API_KEY}" \
             -F "project[name]=${REPO_URL}-container" \
             -F "project[revision]=${REVISION}" \
@@ -106,5 +106,3 @@ jobs:
             -F "project[visibility]=private" \
             -F "format=cyclonedx" \
             -F "file=@container-sbom.cdx.json"
-
-          echo "✅ SBOMs uploaded successfully to FOSSA!"
