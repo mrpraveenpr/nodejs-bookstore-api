@@ -48,12 +48,14 @@ jobs:
       - name: 🧾 Generate Application SBOM
         run: |
           NODE_OPTIONS="-r /tmp/file-shim.js" npx --yes @cyclonedx/cdxgen@latest -t nodejs -o app-sbom.cdx.json
+          echo "✅ Application SBOM created → $(pwd)/app-sbom.cdx.json"
 
       # 6️⃣ Build and export Docker image
       - name: 🏗️ Build container image
         run: |
           docker build -t bookstore:latest .
           docker save bookstore:latest -o bookstore.tar
+          echo "✅ Docker image built and saved as bookstore.tar"
 
       # 7️⃣ Install Trivy
       - name: 🔧 Install Trivy
@@ -66,12 +68,12 @@ jobs:
       # 8️⃣ Generate Container SBOM (Trivy)
       - name: 🧱 Generate Container SBOM
         run: |
-          echo "Generating container SBOM..."
+          echo "🔍 Generating container SBOM..."
           trivy image --format cyclonedx --scanners vuln --output container-sbom.cdx.json bookstore:latest
-          echo "✅ Container SBOM created."
+          echo "✅ Container SBOM created → $(pwd)/container-sbom.cdx.json"
 
       # 9️⃣ (Optional) Upload SBOMs as GitHub artifacts
-      - name: 📤 Upload SBOMs
+      - name: 📤 Upload SBOMs as Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: cyclone-dx-sboms
@@ -79,30 +81,27 @@ jobs:
             app-sbom.cdx.json
             container-sbom.cdx.json
 
-      - name: ☁️ Upload SBOMs to FOSSA
+      # 🔟 Upload both SBOMs to FOSSA using CLI (✅ works on app.fossa.com)
+      - name: ☁️ Upload SBOMs to FOSSA using CLI
         run: |
           set -euo pipefail
-          REPO_URL="https://github.com/${{ github.repository }}"
-          REVISION="${{ github.sha }}"
-          BRANCH="${{ github.ref_name }}" || BRANCH="${{ github.ref }}"
+          echo "📦 Installing FOSSA CLI..."
+          curl -H "Authorization: token ${FOSSA_API_KEY}" https://app.fossa.com/api/reports/cli.sh | bash
+          ./fossa version
 
+          echo ""
           echo "☁️ Uploading Application SBOM to FOSSA..."
-          curl -v -X POST "https://app.fossa.com/api/projects/custom/upload" \
-            -H "Authorization: token ${FOSSA_API_KEY}" \
-            -F "project[name]=${REPO_URL}" \
-            -F "project[revision]=${REVISION}" \
-            -F "project[branch]=${BRANCH}" \
-            -F "project[visibility]=private" \
-            -F "format=cyclonedx" \
-            -F "file=@app-sbom.cdx.json"
+          ./fossa sbom upload \
+            --project "https://github.com/${{ github.repository }}" \
+            --file app-sbom.cdx.json \
+            --format cyclonedx
 
           echo ""
           echo "☁️ Uploading Container SBOM to FOSSA..."
-          curl -v -X POST "https://app.fossa.com/api/projects/custom/upload" \
-            -H "Authorization: token ${FOSSA_API_KEY}" \
-            -F "project[name]=${REPO_URL}-container" \
-            -F "project[revision]=${REVISION}" \
-            -F "project[branch]=${BRANCH}" \
-            -F "project[visibility]=private" \
-            -F "format=cyclonedx" \
-            -F "file=@container-sbom.cdx.json"
+          ./fossa sbom upload \
+            --project "https://github.com/${{ github.repository }}-container" \
+            --file container-sbom.cdx.json \
+            --format cyclonedx
+
+          echo ""
+          echo "✅ SBOMs successfully uploaded to FOSSA via CLI."
