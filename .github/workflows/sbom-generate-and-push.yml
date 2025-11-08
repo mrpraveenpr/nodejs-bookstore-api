@@ -95,23 +95,14 @@ jobs:
       # -----------------------------------------------------------
       # 9️⃣ Install CycloneDX CLI for merging (FIXED)
       # -----------------------------------------------------------
+      # -----------------------------------------------------------
+      # 9️⃣ Install CycloneDX CLI for merging (FIXED)
+      # -----------------------------------------------------------
       - name: 🧰 Install CycloneDX CLI
         run: |
           set -euo pipefail
-          echo "📦 Installing CycloneDX CLI..."
-          VERSION="v0.25.0"
-          
-          # --- FIX: Corrected filename to match the GitHub release asset ---
-          curl -L -o cdx.tar.gz "https://github.com/CycloneDX/cyclonedx-cli/releases/download/${VERSION}/cyclonedx-cli-${VERSION#v}-linux-x64.tar.gz"
-          
-          # Verify download
-          if ! file cdx.tar.gz | grep -q 'gzip compressed'; then
-            echo "❌ Failed to download CycloneDX CLI (file was not gzip)."
-            exit 1
-          fi
-
-          sudo tar -xzf cdx.tar.gz -C /usr/local/bin/
-          sudo chmod +x /usr/local/bin/cyclonedx
+          echo "📦 Installing CycloneDX CLI via npm..."
+          npm install -g @cyclonedx/cyclonedx-cli
           echo "✅ CycloneDX CLI installed successfully!"
           cyclonedx --version
 
