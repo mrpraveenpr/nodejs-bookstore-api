@@ -85,20 +85,23 @@ jobs:
         run: |
           set -euo pipefail
 
-          echo "📦 Installing FOSSA CLI (stable v3.9.4)..."
-          curl -L -o fossa.tar.gz "https://github.com/fossas/fossa-cli/releases/download/v3.9.4/fossa-cli_3.9.4_linux_amd64.tar.gz"
+          echo "📦 Installing FOSSA CLI (v3.9.6)..."
+          FOSSA_VERSION="v3.9.6"
+          FOSSA_URL="https://github.com/fossas/fossa-cli/releases/download/${FOSSA_VERSION}/fossa-cli_${FOSSA_VERSION#v}_Linux_x86_64.tar.gz"
 
-          # Verify tarball
+          echo "⬇️ Downloading from: ${FOSSA_URL}"
+          curl -fsSL -o fossa.tar.gz "${FOSSA_URL}" || { echo "❌ Failed to download FOSSA CLI"; exit 1; }
+
           if ! file fossa.tar.gz | grep -q 'gzip compressed'; then
             echo "❌ Invalid FOSSA CLI archive (download failed or not gzip)."
-            echo "File contents:"
+            echo "File contents (for debugging):"
             head -n 20 fossa.tar.gz || true
             exit 1
           fi
 
           tar -xzf fossa.tar.gz
           sudo mv fossa /usr/local/bin/fossa
-          fossa version
+          echo "✅ Installed FOSSA CLI → $(fossa version)"
 
           echo ""
           echo "🔑 Verifying FOSSA token..."
@@ -127,3 +130,4 @@ jobs:
 
           echo ""
           echo "✅ SBOMs successfully uploaded to FOSSA via CLI."
+
