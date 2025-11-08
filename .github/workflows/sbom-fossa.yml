@@ -1,18 +1,17 @@
-name: Upload existing SBOMs to FOSSA
+name: Upload SBOMs to FOSSA
 
 on:
-  workflow_dispatch:  # 👈 allows you to manually trigger this job from GitHub Actions tab
+  workflow_dispatch:  # Run manually from Actions tab
 
 jobs:
   upload-fossa:
-    name: Upload SBOMs from previous run to FOSSA
     runs-on: ubuntu-latest
     env:
       FOSSA_API_KEY: ${{ secrets.FOSSA_API_KEY }}
 
     steps:
       # -----------------------------------------------------------
-      # 1️⃣ Download SBOM artifact (from previous CycloneDX workflow)
+      # 1️⃣ Download SBOM artifact generated from previous workflow
       # -----------------------------------------------------------
       - name: 🔽 Download SBOM artifact
         uses: actions/download-artifact@v4
@@ -21,74 +20,80 @@ jobs:
           path: ./sboms
 
       # -----------------------------------------------------------
-      # 2️⃣ Verify downloaded SBOM files
+      # 2️⃣ Verify that both SBOMs exist
       # -----------------------------------------------------------
-      - name: 🧾 Verify SBOM files
+      - name: 📦 Verify SBOM files
         run: |
-          echo "✅ SBOM files downloaded:"
-          ls -lh ./sboms
-          echo ""
-          echo "📄 Application SBOM preview:"
-          head -n 10 ./sboms/app-sbom.cdx.json || true
-          echo ""
-          echo "📦 Container SBOM preview:"
-          head -n 10 ./sboms/container-sbom.cdx.json || true
+          echo "📁 Checking downloaded SBOM files..."
+          ls -lh ./sboms || true
+
+          if [ ! -f ./sboms/app-sbom.cdx.json ]; then
+            echo "❌ Missing app-sbom.cdx.json"
+            exit 1
+          fi
+          if [ ! -f ./sboms/container-sbom.cdx.json ]; then
+            echo "❌ Missing container-sbom.cdx.json"
+            exit 1
+          fi
+          echo "✅ SBOM files ready for upload."
 
       # -----------------------------------------------------------
-      # 3️⃣ Upload Application + Container SBOMs to FOSSA
+      # 3️⃣ Upload both SBOMs to FOSSA via new /v2 API
       # -----------------------------------------------------------
       - name: ☁️ Upload SBOMs to FOSSA
         run: |
           set -euo pipefail
           REPO_URL="https://github.com/${{ github.repository }}"
           REVISION="${{ github.sha }}"
-          BRANCH="${{ github.ref_name }}" || BRANCH="${{ github.ref }}"  # fallback if ref_name not available
+          BRANCH="${{ github.ref_name }}" || BRANCH="${{ github.ref }}"
 
-          echo "🔗 Uploading to FOSSA for:"
+          echo "🔗 Uploading SBOMs to FOSSA:"
           echo "   Repo: ${REPO_URL}"
-          echo "   Revision: ${REVISION}"
           echo "   Branch: ${BRANCH}"
+          echo "   Commit: ${REVISION}"
           echo ""
 
-          echo "☁️ Uploading Application SBOM to FOSSA..."
-          http_code_app=$(curl -s -S -X POST "https://app.fossa.com/api/projects/custom/upload" \
+          echo "☁️ Uploading Application SBOM..."
+          http_app=$(curl -s -o /tmp/fossa_app.json -w "%{http_code}" \
+            -X POST "https://app.fossa.com/api/projects/custom/upload/v2" \
             -H "Authorization: token ${FOSSA_API_KEY}" \
             -F "project[name]=${REPO_URL}" \
             -F "project[revision]=${REVISION}" \
             -F "project[branch]=${BRANCH}" \
             -F "project[visibility]=private" \
             -F "format=cyclonedx" \
-            -F "file=@./sboms/app-sbom.cdx.json" \
-            -w "%{http_code}" -o /tmp/fossa_app_response.json || true)
+            -F "file=@./sboms/app-sbom.cdx.json")
 
-          echo "FOSSA Application Upload HTTP Code: ${http_code_app}"
-          echo "===== Application SBOM Response ====="
-          cat /tmp/fossa_app_response.json || true
+          echo "Application SBOM HTTP Code: ${http_app}"
+          echo "Response:"
+          cat /tmp/fossa_app.json || true
           echo ""
 
-          echo "☁️ Uploading Container SBOM to FOSSA..."
-          http_code_container=$(curl -s -S -X POST "https://app.fossa.com/api/projects/custom/upload" \
+          echo "☁️ Uploading Container SBOM..."
+          http_container=$(curl -s -o /tmp/fossa_container.json -w "%{http_code}" \
+            -X POST "https://app.fossa.com/api/projects/custom/upload/v2" \
             -H "Authorization: token ${FOSSA_API_KEY}" \
             -F "project[name]=${REPO_URL}-container" \
             -F "project[revision]=${REVISION}" \
             -F "project[branch]=${BRANCH}" \
             -F "project[visibility]=private" \
             -F "format=cyclonedx" \
-            -F "file=@./sboms/container-sbom.cdx.json" \
-            -w "%{http_code}" -o /tmp/fossa_container_response.json || true)
+            -F "file=@./sboms/container-sbom.cdx.json")
 
-          echo "FOSSA Container Upload HTTP Code: ${http_code_container}"
-          echo "===== Container SBOM Response ====="
-          cat /tmp/fossa_container_response.json || true
+          echo "Container SBOM HTTP Code: ${http_container}"
+          echo "Response:"
+          cat /tmp/fossa_container.json || true
+          echo ""
 
-          # Simple result validation
-          if [[ "${http_code_app}" != "200" && "${http_code_app}" != "201" ]]; then
-            echo "⚠️ Application SBOM upload failed (HTTP ${http_code_app})"
+          if [[ "${http_app}" != "200" && "${http_app}" != "201" ]]; then
+            echo "⚠️ Application SBOM upload failed. Response below:"
+            cat /tmp/fossa_app.json || true
             exit 1
           fi
-          if [[ "${http_code_container}" != "200" && "${http_code_container}" != "201" ]]; then
-            echo "⚠️ Container SBOM upload failed (HTTP ${http_code_container})"
+          if [[ "${http_container}" != "200" && "${http_container}" != "201" ]]; then
+            echo "⚠️ Container SBOM upload failed. Response below:"
+            cat /tmp/fossa_container.json || true
             exit 1
           fi
 
-          echo "✅ SBOMs successfully uploaded to FOSSA!"
+          echo "✅ Both SBOMs successfully uploaded to FOSSA."
