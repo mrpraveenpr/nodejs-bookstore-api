@@ -133,15 +133,13 @@ jobs:
           # ✅ CLI syntax: SBOM file is positional argument (no --file)
           fossa sbom analyze app-sbom.cdx.json \
             --fossa-api-key "${FOSSA_API_KEY}" \
-            --project "https://github.com/${{ github.repository }}" \
-            --format cyclonedx || { echo "❌ Application SBOM upload failed"; exit 1; }
+            --project "https://github.com/${{ github.repository }}" 
 
           echo ""
           echo "☁️ Uploading Container SBOM to FOSSA..."
           fossa sbom analyze container-sbom.cdx.json \
             --fossa-api-key "${FOSSA_API_KEY}" \
-            --project "https://github.com/${{ github.repository }}-container" \
-            --format cyclonedx || { echo "❌ Container SBOM upload failed"; exit 1; }
+            --project "https://github.com/${{ github.repository }}-container"
 
           echo ""
           echo "✅ SBOMs successfully uploaded and analyzed in FOSSA!"
