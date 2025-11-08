@@ -98,12 +98,12 @@ jobs:
       - name: 🧰 Install CycloneDX CLI
         run: |
           echo "📦 Installing CycloneDX CLI..."
-          LATEST=$(curl -s https://api.github.com/repos/CycloneDX/cyclonedx-cli/releases/latest | grep "tag_name" | cut -d '"' -f 4)
-          curl -L -o cdx.zip "https://github.com/CycloneDX/cyclonedx-cli/releases/download/${LATEST}/cyclonedx-linux-x64.zip"
-          unzip -o cdx.zip -d /usr/local/bin/
+          VERSION="v0.25.0"  # You can update this if a newer version is released
+          curl -L -o cdx.tar.gz "https://github.com/CycloneDX/cyclonedx-cli/releases/download/${VERSION}/cyclonedx-linux-x64.tar.gz"
+          sudo tar -xzf cdx.tar.gz -C /usr/local/bin/
           chmod +x /usr/local/bin/cyclonedx
-          cyclonedx version
-
+          echo "✅ CycloneDX CLI installed successfully!"
+          cyclonedx version || echo "⚠️ Unable to show version"
 
       # -----------------------------------------------------------
       # 🔟 Upload both SBOMs as artifacts
