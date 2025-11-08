@@ -128,16 +128,37 @@ jobs:
       # -----------------------------------------------------------
       # 12️⃣ Upload both SBOMs to FOSSA via API
       # -----------------------------------------------------------
-            # 12️⃣ Upload SBOMs to FOSSA via npm CLI (works with app.fossa.com)
-      - name: ☁️ Upload SBOMs to FOSSA via npm CLI
+             # -----------------------------------------------------------
+      # 12️⃣ Upload both SBOMs to FOSSA via official CLI binary
+      # -----------------------------------------------------------
+      - name: ☁️ Upload SBOMs to FOSSA using official CLI
         run: |
           set -euo pipefail
-          echo "📦 Installing FOSSA CLI from npm..."
-          npm install -g @fossa/cli
+
+          echo "📦 Installing FOSSA CLI (latest verified release)..."
+          # Find latest version dynamically
+          FOSSA_VERSION=$(curl -s https://api.github.com/repos/fossas/fossa-cli/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+          FOSSA_URL="https://github.com/fossas/fossa-cli/releases/download/${FOSSA_VERSION}/fossa-cli_${FOSSA_VERSION#v}_Linux_x86_64.tar.gz"
+
+          echo "⬇️ Downloading FOSSA CLI from ${FOSSA_URL}"
+          curl -fsSL -o fossa.tar.gz "${FOSSA_URL}" || { echo "❌ Failed to download FOSSA CLI"; exit 1; }
+
+          # Validate gzip archive
+          if ! file fossa.tar.gz | grep -q 'gzip compressed'; then
+            echo "❌ Invalid FOSSA CLI archive (download failed or not gzip)."
+            echo "File contents (debug):"
+            head -n 20 fossa.tar.gz || true
+            exit 1
+          fi
+
+          tar -xzf fossa.tar.gz
+          sudo mv fossa /usr/local/bin/fossa
+          echo "✅ Installed FOSSA CLI → $(fossa version)"
 
           echo ""
           echo "🔑 Verifying FOSSA token..."
-          fossa whoami --api-key "${FOSSA_API_KEY}" || { echo "❌ Invalid FOSSA API key"; exit 1; }
+          fossa whoami --api-key "${FOSSA_API_KEY}" || { echo "❌ Invalid or expired FOSSA API key"; exit 1; }
+          echo "✅ FOSSA token verified."
 
           echo ""
           echo "☁️ Uploading Application SBOM to FOSSA..."
@@ -145,7 +166,7 @@ jobs:
             --api-key "${FOSSA_API_KEY}" \
             --project "https://github.com/${{ github.repository }}" \
             --file ./sboms/app-sbom.cdx.json \
-            --format cyclonedx
+            --format cyclonedx || { echo "❌ Application SBOM upload failed"; exit 1; }
 
           echo ""
           echo "☁️ Uploading Container SBOM to FOSSA..."
@@ -153,6 +174,7 @@ jobs:
             --api-key "${FOSSA_API_KEY}" \
             --project "https://github.com/${{ github.repository }}-container" \
             --file ./sboms/container-sbom.cdx.json \
-            --format cyclonedx
+            --format cyclonedx || { echo "❌ Container SBOM upload failed"; exit 1; }
 
+          echo ""
           echo "✅ SBOMs successfully uploaded to app.fossa.com!"
