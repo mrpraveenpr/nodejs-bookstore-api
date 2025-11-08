@@ -85,23 +85,28 @@ jobs:
       - name: ☁️ Upload SBOMs to FOSSA using CLI
         run: |
           set -euo pipefail
-          echo "📦 Installing FOSSA CLI..."
-          curl -H "Authorization: token ${FOSSA_API_KEY}" https://app.fossa.com/api/reports/cli.sh | bash
-          ./fossa version
+          echo "📦 Installing latest FOSSA CLI from GitHub..."
+          FOSSA_VER=$(curl -s https://api.github.com/repos/fossas/fossa-cli/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+          curl -L "https://github.com/fossas/fossa-cli/releases/download/${FOSSA_VER}/fossa-cli_${FOSSA_VER#v}_linux_amd64.tar.gz" -o fossa.tar.gz
+          tar -xzf fossa.tar.gz
+          sudo mv fossa /usr/local/bin/fossa
+          fossa version
 
           echo ""
           echo "☁️ Uploading Application SBOM to FOSSA..."
-          ./fossa sbom upload \
+          fossa sbom upload \
             --project "https://github.com/${{ github.repository }}" \
             --file app-sbom.cdx.json \
-            --format cyclonedx
+            --format cyclonedx \
+            --api-key "${FOSSA_API_KEY}"
 
           echo ""
           echo "☁️ Uploading Container SBOM to FOSSA..."
-          ./fossa sbom upload \
+          fossa sbom upload \
             --project "https://github.com/${{ github.repository }}-container" \
             --file container-sbom.cdx.json \
-            --format cyclonedx
+            --format cyclonedx \
+            --api-key "${FOSSA_API_KEY}"
 
-          echo ""
           echo "✅ SBOMs successfully uploaded to FOSSA via CLI."
+
