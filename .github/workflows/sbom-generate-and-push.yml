@@ -104,6 +104,7 @@ jobs:
           chmod +x /usr/local/bin/cyclonedx
           cyclonedx version
 
+
       # -----------------------------------------------------------
       # 🔟 Upload both SBOMs as artifacts
       # -----------------------------------------------------------
