@@ -102,7 +102,7 @@ jobs:
         run: |
           set -euo pipefail
           echo "📦 Installing CycloneDX CLI via npm..."
-          npm install -g @cyclonedx/cyclonedx-cli
+          npm install -g @cyclonedx/cyclonedx-cli -f
           echo "✅ CycloneDX CLI installed successfully!"
           cyclonedx --version
 
