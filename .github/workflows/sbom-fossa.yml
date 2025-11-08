@@ -13,22 +13,30 @@ jobs:
       FOSSA_API_KEY: ${{ secrets.FOSSA_API_KEY }}
 
     steps:
+      # -----------------------------------------------------------
       # 1️⃣ Checkout repository
+      # -----------------------------------------------------------
       - name: 🧩 Checkout source
         uses: actions/checkout@v4
 
+      # -----------------------------------------------------------
       # 2️⃣ Setup Node.js
+      # -----------------------------------------------------------
       - name: ⚙️ Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: 'npm'
 
+      # -----------------------------------------------------------
       # 3️⃣ Install dependencies
+      # -----------------------------------------------------------
       - name: 📦 Install dependencies
         run: npm ci
 
-      # 4️⃣ Fix cdxgen ReferenceError: File not defined
+      # -----------------------------------------------------------
+      # 4️⃣ Patch global.File (fix for cdxgen)
+      # -----------------------------------------------------------
       - name: 🩹 Patch global.File
         run: |
           cat > /tmp/file-shim.js <<'JS'
@@ -44,20 +52,26 @@ jobs:
           }
           JS
 
+      # -----------------------------------------------------------
       # 5️⃣ Generate Application SBOM
-      - name: 🧾 Generate Application SBOM (CycloneDX)
+      # -----------------------------------------------------------
+      - name: 🧾 Generate Application SBOM
         run: |
           NODE_OPTIONS="-r /tmp/file-shim.js" npx --yes @cyclonedx/cdxgen@latest -t nodejs -o app-sbom.cdx.json
           echo "✅ Application SBOM created → $(pwd)/app-sbom.cdx.json"
 
+      # -----------------------------------------------------------
       # 6️⃣ Build and export Docker image
+      # -----------------------------------------------------------
       - name: 🏗️ Build container image
         run: |
           docker build -t bookstore:latest .
           docker save bookstore:latest -o bookstore.tar
           echo "✅ Docker image built and saved as bookstore.tar"
 
+      # -----------------------------------------------------------
       # 7️⃣ Install Trivy
+      # -----------------------------------------------------------
       - name: 🔧 Install Trivy
         run: |
           TRIVY_VER=$(curl -sSL https://api.github.com/repos/aquasecurity/trivy/releases/latest | grep '"tag_name":' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
@@ -65,14 +79,18 @@ jobs:
           sudo mv /tmp/trivy /usr/local/bin/trivy
           trivy --version
 
+      # -----------------------------------------------------------
       # 8️⃣ Generate Container SBOM
+      # -----------------------------------------------------------
       - name: 🧱 Generate Container SBOM
         run: |
           echo "🔍 Generating container SBOM..."
           trivy image --format cyclonedx --scanners vuln --output container-sbom.cdx.json bookstore:latest
           echo "✅ Container SBOM created → $(pwd)/container-sbom.cdx.json"
 
-      # 9️⃣ Upload as GitHub Artifact
+      # -----------------------------------------------------------
+      # 9️⃣ Upload SBOMs as Artifacts
+      # -----------------------------------------------------------
       - name: 📤 Upload SBOMs as Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -81,33 +99,39 @@ jobs:
             app-sbom.cdx.json
             container-sbom.cdx.json
 
-      # 🔟 Verify Files
-      - name: 🧾 Verify SBOM Files
+      # -----------------------------------------------------------
+      # 🔟 Verify SBOM files
+      # -----------------------------------------------------------
+      - name: 🧾 Verify SBOM files
         run: |
-          ls -lh
+          echo "📁 Verifying SBOMs..."
+          ls -lh *.cdx.json || true
           test -f app-sbom.cdx.json || (echo "❌ Missing app-sbom.cdx.json"; exit 1)
           test -f container-sbom.cdx.json || (echo "❌ Missing container-sbom.cdx.json"; exit 1)
-          echo "✅ SBOMs ready for upload."
+          echo "✅ SBOM files verified and ready for upload."
 
-      # 11️⃣ Upload to FOSSA
-      - name: ☁️ Upload SBOMs to FOSSA
+      # -----------------------------------------------------------
+      # 11️⃣ Upload to FOSSA using official CLI
+      # -----------------------------------------------------------
+      - name: ☁️ Upload SBOMs to FOSSA (fossa-cli v3.12+)
         run: |
           set -euo pipefail
-          echo "📦 Installing FOSSA CLI (official)..."
+          echo "📦 Installing FOSSA CLI using official install script..."
           curl -H 'Cache-Control: no-cache' https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.sh | sudo bash
-          fossa --version
+          echo "✅ Installed FOSSA CLI → $(fossa --version)"
           echo ""
-
-          echo "🔑 Verifying FOSSA token (if full-access)..."
+          
+          echo "🔑 Verifying FOSSA token..."
           if ! fossa list-targets --fossa-api-key "${FOSSA_API_KEY}" > /tmp/fossa_token.txt 2>&1; then
             echo "⚠️ Token verification skipped (push-only token)."
           else
-            echo "✅ Token verified."
+            echo "✅ FOSSA token verified."
           fi
           echo ""
 
           echo "☁️ Uploading Application SBOM to FOSSA..."
-          fossa sbom upload \
+          # ✅ CLI command fixed (upload → analyze)
+          fossa sbom analyze \
             --fossa-api-key "${FOSSA_API_KEY}" \
             --project "https://github.com/${{ github.repository }}" \
             --file app-sbom.cdx.json \
@@ -115,11 +139,11 @@ jobs:
 
           echo ""
           echo "☁️ Uploading Container SBOM to FOSSA..."
-          fossa sbom upload \
+          fossa sbom analyze \
             --fossa-api-key "${FOSSA_API_KEY}" \
             --project "https://github.com/${{ github.repository }}-container" \
             --file container-sbom.cdx.json \
             --format cyclonedx || { echo "❌ Container SBOM upload failed"; exit 1; }
 
           echo ""
-          echo "✅ SBOMs successfully uploaded to app.fossa.com!"
+          echo "✅ SBOMs successfully uploaded and analyzed in FOSSA!"
