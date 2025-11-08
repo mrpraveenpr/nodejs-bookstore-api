@@ -1,8 +1,6 @@
 name: SBOM Generation + FOSSA Upload
 
 on:
-  push:
-    branches: [ feature/fossa-sbom ]
   workflow_dispatch:
 
 jobs:
