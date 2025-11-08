@@ -128,24 +128,20 @@ jobs:
       # -----------------------------------------------------------
       # 12️⃣ Upload both SBOMs to FOSSA via official CLI binary
       # -----------------------------------------------------------
-     # -----------------------------------------------------------
-      # 12️⃣ Upload both SBOMs to FOSSA via official CLI binary
-      # -----------------------------------------------------------
       - name: ☁️ Upload SBOMs to FOSSA using official CLI
         run: |
           set -euo pipefail
           echo "📦 Installing FOSSA CLI using official install script..."
           
-          # Use the official install script which handles versioning, naming, and architecture
+          # Use the official install script
           curl -H 'Cache-Control: no-cache' https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.sh | sudo bash
           
-          # --- FIX 1: Changed 'fossa version' to 'fossa --version' ---
           echo "✅ Installed FOSSA CLI → $(fossa --version)"
           echo ""
           
           echo "🔑 Verifying FOSSA token..."
-          # --- FIX 2: Replaced 'fossa whoami' with 'fossa project list' to verify the key ---
-          fossa project list --api-key "${FOSSA_API_KEY}" || { echo "❌ Invalid or expired FOSSA API key"; exit 1; }
+          # --- FIX 3: Replaced 'fossa project list' with 'fossa list-targets' ---
+          fossa list-targets --api-key "${FOSSA_API_KEY}" || { echo "❌ Invalid or expired FOSSA API key"; exit 1; }
           echo "✅ FOSSA token verified."
           echo ""
           
