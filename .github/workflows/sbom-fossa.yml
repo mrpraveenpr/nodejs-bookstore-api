@@ -128,7 +128,7 @@ jobs:
       # -----------------------------------------------------------
       # 12️⃣ Upload both SBOMs to FOSSA via official CLI binary
       # -----------------------------------------------------------
-           - name: ☁️ Upload SBOMs to FOSSA using official CLI
+      - name: ☁️ Upload SBOMs to FOSSA using official CLI
         run: |
           set -euo pipefail
 
