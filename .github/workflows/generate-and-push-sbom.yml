@@ -1,0 +1,45 @@
+name: Generate and Push SBOM to SBOM Manager
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  sbom:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Install CycloneDX SBOM generator
+        run: |
+          npm install -g @cyclonedx/cdxgen
+
+      - name: Generate SBOM
+        run: |
+          cdxgen -r -o sbom.json -t nodejs
+          ls -lh sbom.json
+
+      - name: Push SBOM to sbom-manager repository
+        env:
+          TOKEN: ${{ secrets.SBOM_PUSH_TOKEN }}
+        run: |
+          git config --global user.email "github-actions@github.com"
+          git config --global user.name "GitHub Actions Bot"
+
+          echo "📦 Cloning sbom-manager repo..."
+          git clone https://x-access-token:${TOKEN}@github.com/mrpraveenpr/sbom-manager.git
+          
+          echo "📁 Creating target folder..."
+          mkdir -p sbom-manager/sboms/nodejs-bookstore-api
+
+          echo "📋 Copying SBOM..."
+          cp sbom.json sbom-manager/sboms/nodejs-bookstore-api/sbom.json
+
+          cd sbom-manager
+          git add .
+          git commit -m "Add SBOM from nodejs-bookstore-api - $(date +'%Y-%m-%d %H:%M:%S')" || echo "No changes to commit"
+          git push origin main
