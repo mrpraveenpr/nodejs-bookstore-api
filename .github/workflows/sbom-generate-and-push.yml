@@ -106,14 +106,18 @@ jobs:
             app-sbom.cdx.json
             container-sbom.cdx.json
 
+      - name: Download CycloneDX CLI
+        run: |
+          echo "🔧 Installing CycloneDX CLI for merging..."
+          wget https://github.com/CycloneDX/cyclonedx-cli/releases/latest/download/cyclonedx-linux-x64
+          chmod +x cyclonedx-linux-x64
+          mv cyclonedx-linux-x64 /usr/local/bin/cyclonedx
+
       # -----------------------------------------------------------
       # 🔟 Push and Merge SBOMs in sbom-manager repo
       # -----------------------------------------------------------
       - name: 🚀 Push and Merge SBOMs
         run: |
-          echo "🔧 Installing CycloneDX CLI for merging..."
-          npm install -g @cyclonedx/cyclonedx-cli
-          
           echo "📦 Cloning sbom-manager repo..."
           git config --global user.email "praveenvijay140@gmail.com"
           git config --global user.name "GitHub Actions Bot"
