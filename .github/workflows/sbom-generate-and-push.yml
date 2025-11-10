@@ -100,11 +100,15 @@ jobs:
       # -----------------------------------------------------------
       - name: 🧰 Install CycloneDX CLI
         run: |
-          set -euo pipefail
-          echo "📦 Installing CycloneDX CLI via npm..."
-          npm install -g @cyclonedx/cyclonedx-cli -f
-          echo "✅ CycloneDX CLI installed successfully!"
-          cyclonedx --version
+         set -euo pipefail
+         echo "📦 Installing CycloneDX CLI (binary)..."
+         curl -sSL -o cyclonedx.zip \
+         https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.29.1/cyclonedx-cli-0.29.1-linux-x64.zip
+         unzip -q cyclonedx.zip
+         chmod +x cyclonedx-cli
+         sudo mv cyclonedx-cli /usr/local/bin/cyclonedx
+         echo "✅ CycloneDX CLI installed successfully!"
+         cyclonedx --version
 
       # -----------------------------------------------------------
       # 🔟 Upload both SBOMs as artifacts
