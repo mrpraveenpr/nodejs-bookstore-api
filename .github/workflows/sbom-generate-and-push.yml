@@ -132,7 +132,7 @@ jobs:
 
           echo "🧩 Merging SBOMs with cyclonedx-cli..."
           # Use cyclonedx-cli merge for a correct SBOM merge
-          cyclonedx-cli merge --input-files app-sbom.cdx.json container-sbom.cdx.json --output-file merged-sbom.cdx.json
+          cyclonedx merge --input-files app-sbom.cdx.json container-sbom.cdx.json --output-file merged-sbom.cdx.json
           echo "✅ Merged SBOM created → merged-sbom.cdx.json"
 
           echo "📦 Archiving old SBOMs..."
