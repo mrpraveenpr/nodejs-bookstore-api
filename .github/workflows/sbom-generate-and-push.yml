@@ -39,7 +39,7 @@ jobs:
         run: npm ci
 
       # -----------------------------------------------------------
-      # 4️⃣ Patch global.File (cdxgen fix)
+      # 4️⃣ Patch global.File (for cdxgen fix)
       # -----------------------------------------------------------
       - name: 🩹 Patch global.File
         run: |
@@ -57,11 +57,13 @@ jobs:
           JS
 
       # -----------------------------------------------------------
-      # 5️⃣ Generate Application SBOM
+      # 5️⃣ Generate Application SBOM using cdxgen
       # -----------------------------------------------------------
-      - name: 🧾 Generate Application SBOM
+      - name: 🧾 Generate Application SBOM (Node.js)
         run: |
-          NODE_OPTIONS="-r /tmp/file-shim.js" npx --yes @cyclonedx/cdxgen@latest -t nodejs -o app-sbom.cdx.json
+          echo "🔍 Generating Node.js SBOM using cdxgen..."
+          npm install -g @cyclonedx/cdxgen
+          NODE_OPTIONS="-r /tmp/file-shim.js" cdxgen -t nodejs -r -o app-sbom.cdx.json
           echo "✅ Application SBOM created → $(pwd)/app-sbom.cdx.json"
 
       # -----------------------------------------------------------
@@ -93,25 +95,7 @@ jobs:
           echo "✅ Container SBOM created → $(pwd)/container-sbom.cdx.json"
 
       # -----------------------------------------------------------
-      # 9️⃣ Install CycloneDX CLI for merging (FIXED)
-      # -----------------------------------------------------------
-      # -----------------------------------------------------------
-      # 9️⃣ Install CycloneDX CLI for merging (FIXED)
-      # -----------------------------------------------------------
-      - name: 🧰 Install CycloneDX CLI
-        run: |
-         set -euo pipefail
-         echo "📦 Installing CycloneDX CLI (binary)..."
-         curl -sSL -o cyclonedx.zip \
-         https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.29.1/cyclonedx-cli-0.29.1-linux-x64.zip
-         unzip -q cyclonedx.zip
-         chmod +x cyclonedx-cli
-         sudo mv cyclonedx-cli /usr/local/bin/cyclonedx
-         echo "✅ CycloneDX CLI installed successfully!"
-         cyclonedx --version
-
-      # -----------------------------------------------------------
-      # 🔟 Upload both SBOMs as artifacts
+      # 9️⃣ Upload both SBOMs as artifacts
       # -----------------------------------------------------------
       - name: 📤 Upload SBOMs as Artifacts
         uses: actions/upload-artifact@v4
@@ -122,7 +106,7 @@ jobs:
             container-sbom.cdx.json
 
       # -----------------------------------------------------------
-      # 1️⃣1️⃣ Push SBOMs to sbom-manager and merge them
+      # 🔟 Push SBOMs to sbom-manager repo
       # -----------------------------------------------------------
       - name: 🚀 Push and Merge SBOMs in sbom-manager
         run: |
@@ -138,8 +122,8 @@ jobs:
 
           cd sbom-manager/sboms/nodejs-bookstore-api
 
-          echo "🧩 Merging SBOM files..."
-          cyclonedx merge -o merged-sbom.cdx.json app-sbom.cdx.json container-sbom.cdx.json
+          echo "🧩 Merging SBOM files using jq..."
+          jq -s '.[0] * .[1]' app-sbom.cdx.json container-sbom.cdx.json > merged-sbom.cdx.json
           echo "✅ Merged SBOM created → merged-sbom.cdx.json"
 
           echo "📦 Archiving old SBOMs..."
@@ -157,18 +141,14 @@ jobs:
           echo "✅ Merged SBOM pushed and old files archived."
 
       # -----------------------------------------------------------
-      # 1️⃣1️⃣b Install FOSSA CLI (NEW STEP)
+      # 1️⃣1️⃣ Install FOSSA CLI
       # -----------------------------------------------------------
       - name: 🔧 Install FOSSA CLI
         run: |
           set -euo pipefail
           echo "📦 Installing FOSSA CLI using official install script..."
-          
-          # Use the official install script
           curl -H 'Cache-Control: no-cache' https://raw.githubusercontent.com/fossas/fossa-cli/master/install-latest.sh | sudo bash
-          
           echo "✅ Installed FOSSA CLI → $(fossa --version)"
-          echo ""
           
           echo "🔑 Verifying FOSSA token..."
           fossa list-targets --api-key "${FOSSA_API_KEY}" || { echo "❌ Invalid or expired FOSSA API key"; exit 1; }
@@ -180,14 +160,10 @@ jobs:
       - name: 🔐 Upload Merged SBOM to FOSSA
         run: |
           echo "🔄 Uploading merged SBOM to FOSSA..."
-          # Need to be in the correct directory where the merged file is
           cd sbom-manager/sboms/nodejs-bookstore-api
-          
           echo "Located merged file at $(pwd)/merged-sbom.cdx.json"
-          
           fossa sbom upload \
             --api-key "${FOSSA_API_KEY}" \
             --file merged-sbom.cdx.json \
             --project-id $FOSSA_PROJECT_ID || { echo "❌ FOSSA upload failed"; exit 1; }
-            
           echo "✅ Merged SBOM uploaded to FOSSA successfully."
