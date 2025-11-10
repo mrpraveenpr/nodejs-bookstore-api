@@ -73,7 +73,6 @@ jobs:
       - name: 🏗️ Build container image
         run: |
           docker build -t bookstore:latest .
-          # 'docker save' is not needed as Trivy can read from the local Docker daemon
           echo "✅ Docker image built successfully."
 
       # -----------------------------------------------------------
@@ -92,7 +91,7 @@ jobs:
       - name: 🧱 Generate Container SBOM
         run: |
           echo "🔍 Generating container SBOM..."
-          # ⭐️ FIX: Use --list-all-pkgs to get a full SBOM, not just vulnerable components.
+          # Use --list-all-pkgs for a full SBOM, not just vulnerable components
           trivy image --format cyclonedx --list-all-pkgs --output container-sbom.cdx.json bookstore:latest
           echo "✅ Container SBOM created → $(pwd)/container-sbom.cdx.json"
 
@@ -128,8 +127,7 @@ jobs:
           cd sbom-manager/sboms/nodejs-bookstore-api
 
           echo "🧩 Merging SBOMs with cyclonedx-cli..."
-          # ⭐️ FIX: Use cyclonedx-cli merge for a correct SBOM merge.
-          # This correctly combines the 'components' arrays from both files.
+          # Use cyclonedx-cli merge for a correct SBOM merge
           cyclonedx-cli merge --input-files app-sbom.cdx.json container-sbom.cdx.json --output-file merged-sbom.cdx.json
           echo "✅ Merged SBOM created → merged-sbom.cdx.json"
 
@@ -191,7 +189,6 @@ jobs:
            export FOSSA_TELEMETRY_SCOPE=off
 
            echo "📤 Running FOSSA SBOM analysis..."
-           # ⭐️ FIX: This 'if' block and command must be *inside* the 'run' script.
            if ! fossa sbom analyze \
              --fossa-api-key "${FOSSA_API_KEY}" \
              --file merged-sbom.cdx.json \
