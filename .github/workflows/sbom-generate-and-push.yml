@@ -73,7 +73,7 @@ jobs:
       - name: 🏗️ Build container image
         run: |
           docker build -t bookstore:latest .
-          docker save bookstore:latest -o bookstore.tar
+          # 'docker save' is not needed as Trivy can read from the local Docker daemon
           echo "✅ Docker image built successfully."
 
       # -----------------------------------------------------------
@@ -92,7 +92,8 @@ jobs:
       - name: 🧱 Generate Container SBOM
         run: |
           echo "🔍 Generating container SBOM..."
-          trivy image --format cyclonedx --scanners vuln --output container-sbom.cdx.json bookstore:latest
+          # ⭐️ FIX: Use --list-all-pkgs to get a full SBOM, not just vulnerable components.
+          trivy image --format cyclonedx --list-all-pkgs --output container-sbom.cdx.json bookstore:latest
           echo "✅ Container SBOM created → $(pwd)/container-sbom.cdx.json"
 
       # -----------------------------------------------------------
@@ -111,6 +112,9 @@ jobs:
       # -----------------------------------------------------------
       - name: 🚀 Push and Merge SBOMs
         run: |
+          echo "🔧 Installing CycloneDX CLI for merging..."
+          npm install -g @cyclonedx/cyclonedx-cli
+          
           echo "📦 Cloning sbom-manager repo..."
           git config --global user.email "praveenvijay140@gmail.com"
           git config --global user.name "GitHub Actions Bot"
@@ -123,8 +127,10 @@ jobs:
 
           cd sbom-manager/sboms/nodejs-bookstore-api
 
-          echo "🧩 Merging SBOMs with jq..."
-          jq -s '.[0] * .[1]' app-sbom.cdx.json container-sbom.cdx.json > merged-sbom.cdx.json
+          echo "🧩 Merging SBOMs with cyclonedx-cli..."
+          # ⭐️ FIX: Use cyclonedx-cli merge for a correct SBOM merge.
+          # This correctly combines the 'components' arrays from both files.
+          cyclonedx-cli merge --input-files app-sbom.cdx.json container-sbom.cdx.json --output-file merged-sbom.cdx.json
           echo "✅ Merged SBOM created → merged-sbom.cdx.json"
 
           echo "📦 Archiving old SBOMs..."
@@ -174,17 +180,25 @@ jobs:
       # -----------------------------------------------------------
       - name: 🔐 Upload Merged SBOM to FOSSA
         run: |
-          echo "🔄 Uploading merged SBOM to FOSSA..."
-          cd sbom-manager/sboms/nodejs-bookstore-api
-          if [ ! -f "merged-sbom.cdx.json" ]; then
-            echo "❌ merged-sbom.cdx.json not found!"
-            exit 1
-          fi
+           echo "🔄 Uploading merged SBOM to FOSSA..."
+           cd sbom-manager/sboms/nodejs-bookstore-api
 
-          export FOSSA_TELEMETRY_SCOPE=off
-          fossa sbom upload \
-            --fossa-api-key "${FOSSA_API_KEY}" \
-            --file merged-sbom.cdx.json \
-            --project-id "${FOSSA_PROJECT_ID}" || { echo "❌ FOSSA upload failed"; exit 1; }
+           if [ ! -f "merged-sbom.cdx.json" ]; then
+             echo "❌ merged-sbom.cdx.json not found!"
+             exit 1
+           fi
 
-          echo "✅ Merged SBOM uploaded to FOSSA successfully."
+           export FOSSA_TELEMETRY_SCOPE=off
+
+           echo "📤 Running FOSSA SBOM analysis..."
+           # ⭐️ FIX: This 'if' block and command must be *inside* the 'run' script.
+           if ! fossa sbom analyze \
+             --fossa-api-key "${FOSSA_API_KEY}" \
+             --file merged-sbom.cdx.json \
+             --project-id "${FOSSA_PROJECT_ID}" > /tmp/fossa_upload.log 2>&1; then
+               echo "❌ FOSSA upload failed!"
+               cat /tmp/fossa_upload.log
+               exit 1
+           fi
+
+           echo "✅ Merged SBOM successfully uploaded and analyzed in FOSSA."
