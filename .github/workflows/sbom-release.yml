@@ -78,9 +78,15 @@ jobs:
         working-directory: sbom-manager
         run: |
           RELEASE="${{ github.event.inputs.release_name }}"
+
+          # Fix: Set git identity
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+
           git add .
           git commit -m "Add SBOM files for release $RELEASE"
           git push origin "$RELEASE"
+
 
       # -------------------------------------------------------------
       # Upload artifacts (optional)
