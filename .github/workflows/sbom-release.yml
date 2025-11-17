@@ -1,0 +1,94 @@
+name: SBOM Release Process
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_name:
+        description: "Enter Release Name (e.g., release-1.0.0)"
+        required: true
+        type: string
+
+jobs:
+  sbom-process:
+    runs-on: ubuntu-latest
+
+    steps:
+      # -------------------------------------------------------------
+      # Checkout project source repo
+      # -------------------------------------------------------------
+      - name: 📥 Checkout Source Repo
+        uses: actions/checkout@v4
+
+      # -------------------------------------------------------------
+      # Build Docker image (updated)
+      # -------------------------------------------------------------
+      - name: 🐳 Build Docker Image
+        run: |
+          docker build -t orgin-medical:latest .
+
+      # -------------------------------------------------------------
+      # Install CycloneDX cdxgen
+      # -------------------------------------------------------------
+      - name: 📦 Install cdxgen
+        run: |
+          npm install -g @cyclonedx/cdxgen
+
+      # -------------------------------------------------------------
+      # Generate SBOM for source code
+      # -------------------------------------------------------------
+      - name: 📄 Generate SBOM (Source)
+        run: |
+          cdxgen -o sbom-source.json .
+
+      # -------------------------------------------------------------
+      # Generate SBOM for Docker image (updated)
+      # -------------------------------------------------------------
+      - name: 📄 Generate SBOM (Docker)
+        run: |
+          cdxgen -t docker -o sbom-docker.json orgin-medical:latest
+
+      # -------------------------------------------------------------
+      # Clone SBOM Manager Repo
+      # -------------------------------------------------------------
+      - name: 📥 Clone SBOM Manager Repo
+        run: |
+          git clone https://${{ secrets.SBOM_MANAGER_USERNAME }}:${{ secrets.SBOM_MANAGER_TOKEN }}@github.com/${{ secrets.SBOM_MANAGER_REPO }} sbom-manager
+
+      # -------------------------------------------------------------
+      # Create a new branch with the release name
+      # -------------------------------------------------------------
+      - name: 🌿 Create Release Branch
+        working-directory: sbom-manager
+        run: |
+          RELEASE="${{ github.event.inputs.release_name }}"
+          git checkout -b "$RELEASE"
+
+      # -------------------------------------------------------------
+      # Copy SBOM files into SBOM Manager repo
+      # -------------------------------------------------------------
+      - name: 📂 Copy SBOM Files
+        run: |
+          cp sbom-source.json sbom-manager/
+          cp sbom-docker.json sbom-manager/
+
+      # -------------------------------------------------------------
+      # Commit and push SBOM to SBOM Manager repo
+      # -------------------------------------------------------------
+      - name: 🚀 Commit & Push SBOM Files
+        working-directory: sbom-manager
+        run: |
+          RELEASE="${{ github.event.inputs.release_name }}"
+          git add .
+          git commit -m "Add SBOM files for release $RELEASE"
+          git push origin "$RELEASE"
+
+      # -------------------------------------------------------------
+      # Upload artifacts (optional)
+      # -------------------------------------------------------------
+      - name: 📦 Upload SBOM Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-files
+          path: |
+            sbom-source.json
+            sbom-docker.json
