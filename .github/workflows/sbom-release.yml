@@ -13,85 +13,61 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # -------------------------------------------------------------
-      # Checkout project source repo
-      # -------------------------------------------------------------
-      - name: 📥 Checkout Source Repo
+      # Checkout the source repository
+      - name: Checkout Source Repository
         uses: actions/checkout@v4
 
-      # -------------------------------------------------------------
-      # Build Docker image (updated)
-      # -------------------------------------------------------------
-      - name: 🐳 Build Docker Image
+      # Build the Docker image
+      - name: Build Docker Image
         run: |
           docker build -t orgin-medical:latest .
 
-      # -------------------------------------------------------------
       # Install CycloneDX cdxgen
-      # -------------------------------------------------------------
-      - name: 📦 Install cdxgen
+      - name: Install cdxgen
         run: |
           npm install -g @cyclonedx/cdxgen
 
-      # -------------------------------------------------------------
       # Generate SBOM for source code
-      # -------------------------------------------------------------
-      - name: 📄 Generate SBOM (Source)
+      - name: Generate SBOM (Source Code)
         run: |
           cdxgen -o sbom-source.json .
 
-      # -------------------------------------------------------------
-      # Generate SBOM for Docker image (updated)
-      # -------------------------------------------------------------
-      - name: 📄 Generate SBOM (Docker)
+      # Generate SBOM for Docker image
+      - name: Generate SBOM (Docker Image)
         run: |
           cdxgen -t docker -o sbom-docker.json orgin-medical:latest
 
-      # -------------------------------------------------------------
-      # Clone SBOM Manager Repo
-      # -------------------------------------------------------------
-      - name: 📥 Clone SBOM Manager Repo
+      # Clone SBOM Manager repository
+      - name: Clone SBOM Manager Repository
         run: |
           git clone https://${{ secrets.SBOM_MANAGER_USERNAME }}:${{ secrets.SBOM_MANAGER_TOKEN }}@github.com/${{ secrets.SBOM_MANAGER_REPO }} sbom-manager
 
-      # -------------------------------------------------------------
-      # Create a new branch with the release name
-      # -------------------------------------------------------------
-      - name: 🌿 Create Release Branch
+      # Create a new branch for this release
+      - name: Create Release Branch
         working-directory: sbom-manager
         run: |
           RELEASE="${{ github.event.inputs.release_name }}"
           git checkout -b "$RELEASE"
 
-      # -------------------------------------------------------------
-      # Copy SBOM files into SBOM Manager repo
-      # -------------------------------------------------------------
-      - name: 📂 Copy SBOM Files
+      # Copy generated SBOM files into SBOM Manager repo
+      - name: Copy SBOM Files
         run: |
           cp sbom-source.json sbom-manager/
           cp sbom-docker.json sbom-manager/
 
-      # -------------------------------------------------------------
-      # Commit and push SBOM to SBOM Manager repo
-      # -------------------------------------------------------------
-      - name: 🚀 Commit & Push SBOM Files
+      # Commit and push SBOM files
+      - name: Commit and Push SBOM Files
         working-directory: sbom-manager
         run: |
           RELEASE="${{ github.event.inputs.release_name }}"
-
-          # Fix: Set git identity
           git config --global user.name "github-actions"
           git config --global user.email "github-actions@github.com"
-
           git add .
           git commit -m "Add SBOM files for release $RELEASE"
           git push origin "$RELEASE"
 
-
-      # -------------------------------------------------------------
-      # Upload artifacts (optional)
-      # -------------------------------------------------------------
-      - name: 📦 Upload SBOM Artifacts
+      # Upload SBOM artifacts (optional)
+      - name: Upload SBOM Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: sbom-files
