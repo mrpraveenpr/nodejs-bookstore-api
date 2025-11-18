@@ -11,6 +11,8 @@ on:
 jobs:
   sbom-process:
     runs-on: ubuntu-latest
+    env:
+      PROJECT_NAME: orgin-medical
 
     steps:
       # -----------------------------------------------------------
@@ -41,23 +43,7 @@ jobs:
           cdxgen -o sbom-source.json .
 
       # -----------------------------------------------------------
-      # Generate SBOM for Docker image
-      # -----------------------------------------------------------
-      - name: Generate SBOM (Docker Image)
-        run: |
-          cdxgen -t docker -o sbom-docker.json orgin-medical:latest
-
-      # -----------------------------------------------------------
-      # 6. Build Docker Image for Container SBOM
-      # -----------------------------------------------------------
-      - name: Build Docker Image (for Container SBOM)
-        run: |
-          echo "Building Docker image for ${PROJECT_NAME}..."
-          docker build -t ${PROJECT_NAME}:latest .
-          echo "Docker image built successfully."
-
-      # -----------------------------------------------------------
-      # 7. Install Trivy
+      # Install Trivy
       # -----------------------------------------------------------
       - name: Install Trivy
         run: |
@@ -67,13 +53,13 @@ jobs:
           trivy --version
 
       # -----------------------------------------------------------
-      # 8. Generate Container SBOM via Trivy
+      # Generate Docker SBOM using Trivy (saved as sbom-docker.json)
       # -----------------------------------------------------------
-      - name: Generate Container SBOM
+      - name: Generate Docker SBOM
         run: |
-          echo "Generating container SBOM using Trivy..."
-          trivy image --format cyclonedx --list-all-pkgs --output container-sbom.cdx.json ${PROJECT_NAME}:latest
-          echo "Container SBOM created → $(pwd)/container-sbom.cdx.json"
+          echo "Generating Docker SBOM using Trivy..."
+          trivy image --format cyclonedx --list-all-pkgs --output sbom-docker.json ${PROJECT_NAME}:latest
+          echo "Docker SBOM created → $(pwd)/sbom-docker.json"
 
       # -----------------------------------------------------------
       # Clone SBOM Manager repository
@@ -98,7 +84,6 @@ jobs:
         run: |
           cp sbom-source.json sbom-manager/
           cp sbom-docker.json sbom-manager/
-          cp container-sbom.cdx.json sbom-manager/
 
       # -----------------------------------------------------------
       # Commit and push SBOM files
@@ -123,4 +108,3 @@ jobs:
           path: |
             sbom-source.json
             sbom-docker.json
-            container-sbom.cdx.json
