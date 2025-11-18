@@ -1,84 +1,65 @@
-name: 🧩 SBOM Generation + Push to sbom-manager
+name: SBOM Release Process
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main
-  
+    inputs:
+      release_name:
+        description: "Enter Release Name (e.g., release-1.0.0)"
+        required: true
+        type: string
 
 jobs:
-  sbom-full-pipeline:
-    name: Generate and Push SBOMs to sbom-manager
+  sbom-process:
     runs-on: ubuntu-latest
-    env:
-      TOKEN: ${{ secrets.SBOM_PUSH_TOKEN }}
-      FOSSA_TELEMETRY_SCOPE: off
-      PROJECT_NAME: ${{ github.event.repository.name }}
 
     steps:
       # -----------------------------------------------------------
-      # 1️⃣ Checkout Source Code
+      # Checkout the source repository
       # -----------------------------------------------------------
-      - name: 🧩 Checkout Source
+      - name: Checkout Source Repository
         uses: actions/checkout@v4
 
       # -----------------------------------------------------------
-      # 2️⃣ Setup Node.js
+      # Build the Docker image
       # -----------------------------------------------------------
-      - name: ⚙️ Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: 'npm'
-
-      # -----------------------------------------------------------
-      # 3️⃣ Install dependencies
-      # -----------------------------------------------------------
-      - name: 📦 Install dependencies
-        run: npm ci || echo "⚠️ No package-lock.json found — skipping strict install."
-
-      # -----------------------------------------------------------
-      # 4️⃣ Patch global.File (cdxgen fix)
-      # -----------------------------------------------------------
-      - name: 🩹 Patch global.File (for cdxgen)
+      - name: Build Docker Image
         run: |
-          cat > /tmp/file-shim.js <<'JS'
-          const { Blob } = globalThis;
-          if (typeof globalThis.File === 'undefined') {
-            globalThis.File = class File extends Blob {
-              constructor(bits = [], name = 'file', options = {}) {
-                super(bits, options);
-                this.name = name;
-                this.lastModified = options.lastModified || Date.now();
-              }
-            };
-          }
-          JS
+          docker build -t orgin-medical:latest .
 
       # -----------------------------------------------------------
-      # 5️⃣ Generate Application SBOM
+      # Install CycloneDX cdxgen
       # -----------------------------------------------------------
-      - name: 🧾 Generate Application SBOM
+      - name: Install cdxgen
         run: |
-          echo "🔍 Generating Node.js application SBOM..."
-          npm install -g @cyclonedx/cdxgen@10.10.3
-          NODE_OPTIONS="-r /tmp/file-shim.js" cdxgen -t nodejs -r -o app-sbom.cdx.json
-          echo "✅ Application SBOM created → $(pwd)/app-sbom.cdx.json"
+          npm install -g @cyclonedx/cdxgen
 
       # -----------------------------------------------------------
-      # 6️⃣ Build Docker Image
+      # Generate SBOM for source code
       # -----------------------------------------------------------
-      - name: 🏗️ Build Docker Image
+      - name: Generate SBOM (Source Code)
         run: |
-          echo "🏗️ Building Docker image for ${PROJECT_NAME}..."
+          cdxgen -o sbom-source.json .
+
+      # -----------------------------------------------------------
+      # Generate SBOM for Docker image
+      # -----------------------------------------------------------
+      - name: Generate SBOM (Docker Image)
+        run: |
+          cdxgen -t docker -o sbom-docker.json orgin-medical:latest
+
+      # -----------------------------------------------------------
+      # 6. Build Docker Image for Container SBOM
+      # -----------------------------------------------------------
+      - name: Build Docker Image (for Container SBOM)
+        run: |
+          echo "Building Docker image for ${PROJECT_NAME}..."
           docker build -t ${PROJECT_NAME}:latest .
-          echo "✅ Docker image built successfully."
+          echo "Docker image built successfully."
 
       # -----------------------------------------------------------
-      # 7️⃣ Install Trivy
+      # 7. Install Trivy
       # -----------------------------------------------------------
-      - name: 🔧 Install Trivy
+      - name: Install Trivy
         run: |
           TRIVY_VER=$(curl -sSL https://api.github.com/repos/aquasecurity/trivy/releases/latest | grep '"tag_name":' | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
           curl -sfL "https://github.com/aquasecurity/trivy/releases/download/${TRIVY_VER}/trivy_${TRIVY_VER#v}_Linux-64bit.tar.gz" | tar -xz -C /tmp
@@ -86,45 +67,61 @@ jobs:
           trivy --version
 
       # -----------------------------------------------------------
-      # 8️⃣ Generate Container SBOM
+      # 8. Generate Container SBOM via Trivy
       # -----------------------------------------------------------
-      - name: 🧱 Generate Container SBOM
+      - name: Generate Container SBOM
         run: |
-          echo "🔍 Generating container SBOM using Trivy..."
+          echo "Generating container SBOM using Trivy..."
           trivy image --format cyclonedx --list-all-pkgs --output container-sbom.cdx.json ${PROJECT_NAME}:latest
-          echo "✅ Container SBOM created → $(pwd)/container-sbom.cdx.json"
+          echo "Container SBOM created → $(pwd)/container-sbom.cdx.json"
 
       # -----------------------------------------------------------
-      # 9️⃣ Upload SBOMs as Artifacts (for visibility)
+      # Clone SBOM Manager repository
       # -----------------------------------------------------------
-      - name: 📤 Upload SBOMs as Artifacts
+      - name: Clone SBOM Manager Repository
+        run: |
+          git clone https://${{ secrets.SBOM_MANAGER_USERNAME }}:${{ secrets.SBOM_MANAGER_TOKEN }}@github.com/${{ secrets.SBOM_MANAGER_REPO }} sbom-manager
+
+      # -----------------------------------------------------------
+      # Create a new branch for this release
+      # -----------------------------------------------------------
+      - name: Create Release Branch
+        working-directory: sbom-manager
+        run: |
+          RELEASE="${{ github.event.inputs.release_name }}"
+          git checkout -b "$RELEASE"
+
+      # -----------------------------------------------------------
+      # Copy generated SBOM files into SBOM Manager repo
+      # -----------------------------------------------------------
+      - name: Copy SBOM Files
+        run: |
+          cp sbom-source.json sbom-manager/
+          cp sbom-docker.json sbom-manager/
+          cp container-sbom.cdx.json sbom-manager/
+
+      # -----------------------------------------------------------
+      # Commit and push SBOM files
+      # -----------------------------------------------------------
+      - name: Commit and Push SBOM Files
+        working-directory: sbom-manager
+        run: |
+          RELEASE="${{ github.event.inputs.release_name }}"
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git add .
+          git commit -m "Add SBOM files for release $RELEASE"
+          git push origin "$RELEASE"
+
+      # -----------------------------------------------------------
+      # Upload SBOM artifacts (optional)
+      # -----------------------------------------------------------
+      - name: Upload SBOM Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: generated-sboms
+          name: sbom-files
           path: |
-            app-sbom.cdx.json
+            sbom-source.json
+            sbom-docker.json
             container-sbom.cdx.json
 
-      # -----------------------------------------------------------
-      # 🔟 Push SBOMs to sbom-manager repo
-      # -----------------------------------------------------------
-      - name: 🚀 Push SBOMs to sbom-manager
-        run: |
-          echo "📦 Cloning sbom-manager repository..."
-          git config --global user.email "actions@github.com"
-          git config --global user.name "GitHub Actions Bot"
-
-          git clone https://x-access-token:${TOKEN}@github.com/mrpraveenpr/sbom-manager.git
-
-          TARGET_DIR="sbom-manager/sboms/${PROJECT_NAME}"
-          mkdir -p "$TARGET_DIR"
-
-          echo "📁 Copying SBOM files to ${TARGET_DIR}..."
-          cp app-sbom.cdx.json "$TARGET_DIR/"
-          cp container-sbom.cdx.json "$TARGET_DIR/"
-
-          cd sbom-manager
-          git add .
-          git commit -m "📦 SBOMs updated for ${PROJECT_NAME} - $(date -u '+%Y-%m-%d %H:%M:%S')" || echo "ℹ️ No new changes to commit."
-          git push origin main
-          echo "✅ SBOMs successfully pushed to sbom-manager/sboms/${PROJECT_NAME}"
