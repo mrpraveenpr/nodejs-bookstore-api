@@ -1,0 +1,28 @@
+name: SonarQube PR Analysis
+
+on:
+  pull_request:
+    branches:
+      - main   # PR target branch (base)
+
+jobs:
+  sonar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: SonarQube Scan (PR)
+        uses: SonarSource/sonarqube-scan-action@v2
+        env:
+          SONAR_HOST_URL: http://<SONARQUBE-IP>:9000
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          args: >
+            -Dsonar.projectKey=nodejs-bookstore-api
+            -Dsonar.pullrequest.key=${{ github.event.pull_request.number }}
+            -Dsonar.pullrequest.branch=${{ github.head_ref }}
+            -Dsonar.pullrequest.base=${{ github.base_ref }}
