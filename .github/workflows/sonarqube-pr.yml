@@ -3,11 +3,11 @@ name: SonarQube PR Analysis
 on:
   pull_request:
     branches:
-      - main   # PR target branch (base)
+      - main
 
 jobs:
   sonar:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
     steps:
       - name: Checkout code
